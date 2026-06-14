@@ -127,6 +127,7 @@
       <div class="summary-card balance"><div class="label">คงเหลือ</div><div class="amount" id="s-balance">฿0</div></div>
       <div class="summary-card debt"><div class="label">หนี้บัตร+ผ่อนรวม</div><div class="amount" id="s-debt">฿0</div></div>
     </div>
+    <div id="cc-due-alert"></div>
     <div class="list-card"><h3>รายการล่าสุด</h3><div id="recent-list"><div class="empty">ยังไม่มีรายการ</div></div></div>
     <div class="list-card"><h3>รายจ่ายรายเดือนที่ยังไม่ได้จ่าย</h3><div id="unpaid-monthly"><div class="empty">ไม่มีรายการค้างชำระ</div></div></div>
   </div>
@@ -167,7 +168,10 @@
       </div>
       <div class="form-row">
         <input type="number" id="cc-debt-input" placeholder="หนี้คงค้าง (บาท)" inputmode="decimal">
-        <input type="number" id="cc-dueday" placeholder="วันครบกำหนด" min="1" max="31" inputmode="numeric">
+        <input type="number" id="cc-cutday" placeholder="วันตัดบัตร (เช่น 25)" min="1" max="31" inputmode="numeric">
+      </div>
+      <div class="form-row">
+        <input type="number" id="cc-dueday" placeholder="วันครบกำหนดชำระ (เช่น 15)" min="1" max="31" inputmode="numeric">
       </div>
       <div class="form-row" id="cc-group-row" style="align-items:center;gap:10px">
         <label style="font-size:13px;color:#555;white-space:nowrap">วงเงินร่วมกับ:</label>
@@ -352,10 +356,11 @@
     <div class="form-row"><input type="text" id="edit-cc-name" placeholder="ชื่อบัตร"></div>
     <div class="form-row">
       <input type="number" id="edit-cc-limit" placeholder="วงเงิน (บาท)" inputmode="decimal">
-      <input type="number" id="edit-cc-dueday" placeholder="วันครบกำหนด" min="1" max="31" inputmode="numeric">
+      <input type="number" id="edit-cc-debt" placeholder="หนี้คงค้าง (บาท)" inputmode="decimal">
     </div>
     <div class="form-row">
-      <input type="number" id="edit-cc-debt" placeholder="หนี้คงค้าง (บาท)" inputmode="decimal">
+      <input type="number" id="edit-cc-cutday" placeholder="วันตัดบัตร (เช่น 25)" min="1" max="31" inputmode="numeric">
+      <input type="number" id="edit-cc-dueday" placeholder="วันครบกำหนดชำระ (เช่น 15)" min="1" max="31" inputmode="numeric">
     </div>
     <div class="form-row" style="align-items:center;gap:10px">
       <label style="font-size:13px;color:#555;white-space:nowrap">วงเงินร่วมกับ:</label>
@@ -475,8 +480,9 @@ function editCreditCard(id) {
   editingCCId = id;
   document.getElementById('edit-cc-name').value = c.name;
   document.getElementById('edit-cc-limit').value = c.limit || '';
-  document.getElementById('edit-cc-dueday').value = c.dueday || '';
   document.getElementById('edit-cc-debt').value = c.debt || '';
+  document.getElementById('edit-cc-cutday').value = c.cutday || '';
+  document.getElementById('edit-cc-dueday').value = c.dueday || '';
   populateCCGroupSelect('edit-cc-group', id, c.limitGroup || '');
   openModal('modal-cc');
 }
@@ -487,8 +493,9 @@ function saveEditCC() {
   if (!name) { alert('กรุณากรอกชื่อบัตร'); return; }
   c.name = name;
   c.limit = parseFloat(document.getElementById('edit-cc-limit').value) || 0;
-  c.dueday = parseInt(document.getElementById('edit-cc-dueday').value) || 0;
   c.debt = parseFloat(document.getElementById('edit-cc-debt').value) || 0;
+  c.cutday = parseInt(document.getElementById('edit-cc-cutday').value) || 0;
+  c.dueday = parseInt(document.getElementById('edit-cc-dueday').value) || 0;
   c.limitGroup = document.getElementById('edit-cc-group').value || '';
   saveData(); closeModal('modal-cc'); render();
 }
@@ -691,11 +698,12 @@ function addCreditCard() {
   const limit = parseFloat(document.getElementById('cc-limit').value) || 0;
   const debt = parseFloat(document.getElementById('cc-debt-input').value) || 0;
   const dueday = parseInt(document.getElementById('cc-dueday').value) || 0;
+  const cutday = parseInt(document.getElementById('cc-cutday').value) || 0;
   const limitGroup = document.getElementById('cc-group-select').value || '';
   if (!name) { alert('กรุณากรอกชื่อบัตร'); return; }
-  state.creditCards.push({ id: Date.now(), name, limit, debt, dueday, limitGroup });
+  state.creditCards.push({ id: Date.now(), name, limit, debt, cutday, dueday, limitGroup });
   saveData();
-  ['cc-name','cc-limit','cc-debt-input','cc-dueday'].forEach(id => document.getElementById(id).value = '');
+  ['cc-name','cc-limit','cc-debt-input','cc-cutday','cc-dueday'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('cc-group-select').value = '';
   render();
 }
@@ -879,6 +887,20 @@ function render() {
   document.getElementById('s-balance').textContent = fmt(income - expense);
   document.getElementById('s-debt').textContent = fmt(totalDebt);
 
+  // CC due date alerts
+  const today = new Date().getDate();
+  const ccAlerts = state.creditCards.filter(c => c.dueday).map(c => {
+    const diff = c.dueday - today;
+    if (diff < 0 || diff > 7) return null;
+    const color = diff <= 2 ? '#f44336' : '#ff9800';
+    const label = diff === 0 ? 'วันนี้!' : diff < 0 ? 'เลยกำหนดแล้ว!' : `อีก ${diff} วัน`;
+    return `<div style="background:${color};color:#fff;border-radius:10px;padding:10px 14px;margin-bottom:8px;font-size:14px">
+      ⚠️ <b>${c.name}</b> ครบกำหนดชำระวันที่ ${c.dueday} — <b>${label}</b>
+      ${c.debt ? ' · ยอดค้าง ' + fmt(c.debt) : ''}
+    </div>`;
+  }).filter(Boolean);
+  document.getElementById('cc-due-alert').innerHTML = ccAlerts.join('');
+
   document.getElementById('recent-list').innerHTML = txs.length ? txs.slice(0,5).map(t=>txItemHtml(t,false)).join('') : '<div class="empty">ยังไม่มีรายการเดือนนี้</div>';
 
   const unpaid = state.monthlyExpenses.filter(e => !state.monthlyStatus[mk+'-'+e.id]);
@@ -915,7 +937,7 @@ function render() {
           <div style="font-size:26px;flex-shrink:0">💳</div>
           <div class="item-info">
             <div class="cc-name">${c.name}</div>
-            <div style="font-size:12px;color:#888;margin-top:2px">${c.dueday?'ครบกำหนด วันที่ '+c.dueday:'ไม่ระบุวันครบกำหนด'}</div>
+            <div style="font-size:12px;color:#888;margin-top:2px">${c.cutday?'ตัดบัตรวันที่ '+c.cutday+' · ':''} ${c.dueday?'ชำระภายในวันที่ '+c.dueday:'ไม่ระบุวันชำระ'}</div>
             ${sharedNote ? '<div style="margin-top:4px">'+sharedNote+'</div>' : ''}
           </div>
           <div class="item-actions">
