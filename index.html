@@ -821,7 +821,8 @@ function addMonthlyExpense() {
   const dueday = parseInt(document.getElementById('mo-dueday').value) || 1;
   const category = document.getElementById('mo-category').value;
   if (!name || !amount) { alert('กรุณากรอกรายการและจำนวนเงิน'); return; }
-  state.monthlyExpenses.push({ id: Date.now(), name, amount, dueday, category });
+  const mk2 = monthKey(state.currentYear, state.currentMonth);
+  state.monthlyExpenses.push({ id: Date.now(), name, amount, dueday, category, month: mk2 });
   saveData();
   ['mo-name','mo-amount','mo-dueday'].forEach(id => document.getElementById(id).value = '');
   render();
@@ -938,7 +939,7 @@ function render() {
 
   document.getElementById('recent-list').innerHTML = txs.length ? txs.slice(0,5).map(t=>txItemHtml(t,false)).join('') : '<div class="empty">ยังไม่มีรายการเดือนนี้</div>';
 
-  const unpaid = state.monthlyExpenses.filter(e => !state.monthlyStatus[mk+'-'+e.id]);
+  const unpaid = state.monthlyExpenses.filter(e => (!e.month || e.month === mk) && !state.monthlyStatus[mk+'-'+e.id]);
   document.getElementById('unpaid-monthly').innerHTML = unpaid.length ? unpaid.map(e=>`
     <div class="list-item">
       <div class="item-dot dot-expense"></div>
@@ -1051,7 +1052,8 @@ function render() {
       </div>`).join('');
   } else { document.getElementById('cc-history-card').style.display = 'none'; }
 
-  document.getElementById('monthly-list').innerHTML = state.monthlyExpenses.length ? state.monthlyExpenses.map(e=>{
+  const curMonthExpenses = state.monthlyExpenses.filter(e => !e.month || e.month === mk);
+  document.getElementById('monthly-list').innerHTML = curMonthExpenses.length ? curMonthExpenses.map(e=>{
     const paid = !!state.monthlyStatus[mk+'-'+e.id];
     return `<div class="monthly-item">
       <div class="monthly-status ${paid?'paid':''}" onclick="toggleMonthlyPaid(${e.id})">${paid?'✓':''}</div>
