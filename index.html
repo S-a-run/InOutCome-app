@@ -124,7 +124,7 @@
     <div class="summary-grid">
       <div class="summary-card income"><div class="label">รายรับเดือนนี้</div><div class="amount" id="s-income">฿0</div></div>
       <div class="summary-card expense"><div class="label">รายจ่ายเดือนนี้</div><div class="amount" id="s-expense">฿0</div></div>
-      <div class="summary-card balance"><div class="label">คงเหลือ</div><div class="amount" id="s-balance">฿0</div></div>
+      <div class="summary-card balance"><div class="label">คงเหลือสะสม</div><div class="amount" id="s-balance">฿0</div><div style="font-size:12px;color:#888;margin-top:2px">เดือนนี้: <span id="s-balance-month">฿0</span></div></div>
       <div class="summary-card debt"><div class="label">หนี้บัตร+ผ่อนรวม</div><div class="amount" id="s-debt">฿0</div></div>
     </div>
     <div id="cc-due-alert"></div>
@@ -882,9 +882,11 @@ function render() {
   const income = txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const expense = txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const totalDebt = state.creditCards.reduce((s,c)=>s+(c.debt||0),0) + state.loans.reduce((s,l)=>s+(l.debt||0),0);
+  const cumulativeBalance = state.transactions.reduce((s,t)=>t.type==='income'?s+t.amount:s-t.amount, 0);
   document.getElementById('s-income').textContent = fmt(income);
   document.getElementById('s-expense').textContent = fmt(expense);
-  document.getElementById('s-balance').textContent = fmt(income - expense);
+  document.getElementById('s-balance').textContent = fmt(cumulativeBalance);
+  document.getElementById('s-balance-month').textContent = fmt(income - expense);
   document.getElementById('s-debt').textContent = fmt(totalDebt);
 
   // CC due date alerts
