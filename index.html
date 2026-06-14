@@ -836,20 +836,47 @@ function deleteMonthlyExpense(id) {
 
 function toggleMonthlyPaid(id) {
   const key = monthKey(state.currentYear, state.currentMonth) + '-' + id;
+  const txKey = key + '-txid';
   const nowPaid = !state.monthlyStatus[key];
   state.monthlyStatus[key] = nowPaid;
 
   const expense = state.monthlyExpenses.find(e => e.id === id);
-  if (expense && expense.category) {
+  if (!expense) { saveData(); render(); return; }
+
+  if (nowPaid) {
+    // สร้าง transaction รายจ่ายอัตโนมัติ
+    const txId = Date.now();
+    const d = new Date(state.currentYear, state.currentMonth, expense.dueday || 1);
+    state.transactions.push({
+      id: txId,
+      type: 'expense',
+      amount: expense.amount,
+      desc: expense.name + (expense.category ? ' (' + expense.category + ')' : ''),
+      date: d.toISOString().split('T')[0],
+      monthKey: monthKey(state.currentYear, state.currentMonth),
+      category: expense.category || 'รายเดือน',
+      autoFromMonthly: true
+    });
+    state.monthlyStatus[txKey] = txId;
+
+    // หักหนี้บัตร/สินเชื่อ
     const ccMatch = state.creditCards.find(c => expense.category === '💳 ' + c.name);
     const lnMatch = state.loans.find(l => expense.category === '💸 ' + l.name);
-    if (ccMatch) {
-      ccMatch.debt = (ccMatch.debt || 0) + (nowPaid ? -expense.amount : expense.amount);
-      if (ccMatch.debt < 0) ccMatch.debt = 0;
-    } else if (lnMatch) {
-      lnMatch.debt = (lnMatch.debt || 0) + (nowPaid ? -expense.amount : expense.amount);
-      if (lnMatch.debt < 0) lnMatch.debt = 0;
+    if (ccMatch) { ccMatch.debt = Math.max(0, (ccMatch.debt || 0) - expense.amount); }
+    else if (lnMatch) { lnMatch.debt = Math.max(0, (lnMatch.debt || 0) - expense.amount); }
+  } else {
+    // ลบ transaction ที่สร้างไว้
+    const txId = state.monthlyStatus[txKey];
+    if (txId) {
+      state.transactions = state.transactions.filter(t => t.id !== txId);
+      delete state.monthlyStatus[txKey];
     }
+
+    // คืนหนี้บัตร/สินเชื่อ
+    const ccMatch = state.creditCards.find(c => expense.category === '💳 ' + c.name);
+    const lnMatch = state.loans.find(l => expense.category === '💸 ' + l.name);
+    if (ccMatch) { ccMatch.debt = (ccMatch.debt || 0) + expense.amount; }
+    else if (lnMatch) { lnMatch.debt = (lnMatch.debt || 0) + expense.amount; }
   }
 
   saveData(); render();
