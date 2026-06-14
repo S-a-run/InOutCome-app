@@ -851,7 +851,7 @@ function toggleMonthlyPaid(id) {
       id: txId,
       type: 'expense',
       amount: expense.amount,
-      desc: expense.name + (expense.category ? ' (' + expense.category + ')' : ''),
+      name: expense.name + (expense.category ? ' (' + expense.category + ')' : ''),
       date: d.toISOString().split('T')[0],
       monthKey: monthKey(state.currentYear, state.currentMonth),
       category: expense.category || 'รายเดือน',
