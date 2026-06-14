@@ -168,7 +168,7 @@
       </div>
       <div class="form-row">
         <input type="number" id="cc-debt-input" placeholder="หนี้คงค้าง (บาท)" inputmode="decimal">
-        <input type="number" id="cc-cutday" placeholder="วันตัดบัตร (เช่น 25)" min="1" max="31" inputmode="numeric">
+        <input type="number" id="cc-cutday" placeholder="วันสรุปยอด (เช่น 25)" min="1" max="31" inputmode="numeric">
       </div>
       <div class="form-row">
         <input type="number" id="cc-dueday" placeholder="วันครบกำหนดชำระ (เช่น 15)" min="1" max="31" inputmode="numeric">
@@ -359,7 +359,7 @@
       <input type="number" id="edit-cc-debt" placeholder="หนี้คงค้าง (บาท)" inputmode="decimal">
     </div>
     <div class="form-row">
-      <input type="number" id="edit-cc-cutday" placeholder="วันตัดบัตร (เช่น 25)" min="1" max="31" inputmode="numeric">
+      <input type="number" id="edit-cc-cutday" placeholder="วันสรุปยอด (เช่น 25)" min="1" max="31" inputmode="numeric">
       <input type="number" id="edit-cc-dueday" placeholder="วันครบกำหนดชำระ (เช่น 15)" min="1" max="31" inputmode="numeric">
     </div>
     <div class="form-row" style="align-items:center;gap:10px">
@@ -937,7 +937,7 @@ function render() {
           <div style="font-size:26px;flex-shrink:0">💳</div>
           <div class="item-info">
             <div class="cc-name">${c.name}</div>
-            <div style="font-size:12px;color:#888;margin-top:2px">${c.cutday?'ตัดบัตรวันที่ '+c.cutday+' · ':''} ${c.dueday?'ชำระภายในวันที่ '+c.dueday:'ไม่ระบุวันชำระ'}</div>
+            <div style="font-size:12px;color:#888;margin-top:2px">${c.cutday?'สรุปยอดวันที่ '+c.cutday+' · ':''} ${c.dueday?'ชำระภายในวันที่ '+c.dueday:'ไม่ระบุวันชำระ'}</div>
             ${sharedNote ? '<div style="margin-top:4px">'+sharedNote+'</div>' : ''}
           </div>
           <div class="item-actions">
