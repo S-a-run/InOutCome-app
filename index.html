@@ -114,6 +114,7 @@
     <div class="tab active" onclick="showTab('overview')">📊 ภาพรวม</div>
     <div class="tab" onclick="showTab('transactions')">📝 รายการ</div>
     <div class="tab" onclick="showTab('credit')">💳 บัตรเครดิต</div>
+    <div class="tab" onclick="showTab('loans')">💸 ผ่อน/สินเชื่อ</div>
     <div class="tab" onclick="showTab('monthly')">📅 รายเดือน</div>
     <div class="tab" onclick="showTab('settings')">⚙️ ตั้งค่า</div>
   </div>
@@ -124,7 +125,7 @@
       <div class="summary-card income"><div class="label">รายรับเดือนนี้</div><div class="amount" id="s-income">฿0</div></div>
       <div class="summary-card expense"><div class="label">รายจ่ายเดือนนี้</div><div class="amount" id="s-expense">฿0</div></div>
       <div class="summary-card balance"><div class="label">คงเหลือ</div><div class="amount" id="s-balance">฿0</div></div>
-      <div class="summary-card debt"><div class="label">หนี้บัตรรวม</div><div class="amount" id="s-debt">฿0</div></div>
+      <div class="summary-card debt"><div class="label">หนี้บัตร+ผ่อนรวม</div><div class="amount" id="s-debt">฿0</div></div>
     </div>
     <div class="list-card"><h3>รายการล่าสุด</h3><div id="recent-list"><div class="empty">ยังไม่มีรายการ</div></div></div>
     <div class="list-card"><h3>รายจ่ายรายเดือนที่ยังไม่ได้จ่าย</h3><div id="unpaid-monthly"><div class="empty">ไม่มีรายการค้างชำระ</div></div></div>
@@ -202,6 +203,51 @@
     </div>
   </div>
 
+  <!-- Loans -->
+  <div id="page-loans" class="page section">
+    <div class="form-card">
+      <h3>เพิ่มสินเชื่อ/ผ่อนชำระ</h3>
+      <div class="form-row">
+        <input type="text" id="ln-name" placeholder="ชื่อ เช่น SpayLater, กดเงินสด">
+        <input type="number" id="ln-debt" placeholder="หนี้คงเหลือ (บาท)" inputmode="decimal">
+      </div>
+      <div class="form-row">
+        <input type="number" id="ln-monthly" placeholder="ผ่อนต่อเดือน (บาท)" inputmode="decimal">
+        <input type="number" id="ln-dueday" placeholder="วันครบกำหนด" min="1" max="31" inputmode="numeric">
+      </div>
+      <div class="form-row">
+        <select id="ln-type">
+          <option value="bnpl">BNPL (Buy Now Pay Later)</option>
+          <option value="cash">กดเงินสด/สินเชื่อ</option>
+          <option value="installment">ผ่อนสินค้า</option>
+          <option value="other">อื่นๆ</option>
+        </select>
+        <input type="text" id="ln-note" placeholder="หมายเหตุ">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="addLoan()">+ เพิ่มรายการ</button>
+    </div>
+    <div id="loan-list"></div>
+    <div class="form-card" id="loan-payment-form" style="display:none">
+      <h3>บันทึกการชำระ</h3>
+      <div class="form-row">
+        <select id="ln-select"></select>
+        <input type="number" id="ln-pay-amount" placeholder="จำนวนเงิน" inputmode="decimal">
+      </div>
+      <div class="form-row">
+        <input type="date" id="ln-pay-date">
+        <input type="text" id="ln-pay-note" placeholder="หมายเหตุ">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveLoanPayment()">บันทึก</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('loan-payment-form').style.display='none'">ยกเลิก</button>
+      </div>
+    </div>
+    <div class="list-card" id="loan-history-card" style="display:none">
+      <h3>ประวัติการชำระ</h3>
+      <div id="loan-history-list"></div>
+    </div>
+  </div>
+
   <!-- Monthly -->
   <div id="page-monthly" class="page section">
     <div class="form-card">
@@ -241,6 +287,32 @@
         <button class="btn btn-outline btn-sm" onclick="exportData()">📥 Export JSON</button>
         <label class="btn btn-outline btn-sm" style="cursor:pointer">📤 Import JSON<input type="file" accept=".json" onchange="importData(event)" style="display:none"></label>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Loan Modal -->
+<div class="modal-overlay hidden" id="modal-ln">
+  <div class="modal">
+    <h3>แก้ไขสินเชื่อ/ผ่อนชำระ</h3>
+    <div class="form-row"><input type="text" id="edit-ln-name" placeholder="ชื่อ"></div>
+    <div class="form-row">
+      <input type="number" id="edit-ln-debt" placeholder="หนี้คงเหลือ (บาท)" inputmode="decimal">
+      <input type="number" id="edit-ln-monthly" placeholder="ผ่อนต่อเดือน (บาท)" inputmode="decimal">
+    </div>
+    <div class="form-row">
+      <input type="number" id="edit-ln-dueday" placeholder="วันครบกำหนด" min="1" max="31" inputmode="numeric">
+      <select id="edit-ln-type">
+        <option value="bnpl">BNPL</option>
+        <option value="cash">กดเงินสด/สินเชื่อ</option>
+        <option value="installment">ผ่อนสินค้า</option>
+        <option value="other">อื่นๆ</option>
+      </select>
+    </div>
+    <div class="form-row"><input type="text" id="edit-ln-note" placeholder="หมายเหตุ"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary btn-sm" onclick="saveEditLoan()">บันทึก</button>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-ln')">ยกเลิก</button>
     </div>
   </div>
 </div>
@@ -333,12 +405,16 @@ let editingCCId = null;
 let editingMoId = null;
 let editingTxType = 'income';
 
+let editingLnId = null;
+
 let state = {
   currentMonth: new Date().getMonth(),
   currentYear: new Date().getFullYear(),
   transactions: [],
   creditCards: [],
   ccTransactions: [],
+  loans: [],
+  loanTransactions: [],
   monthlyExpenses: [],
   monthlyStatus: {},
   selectedType: 'income',
@@ -515,7 +591,7 @@ function initFirebase(config) {
 }
 
 function startListeners() {
-  const keys = ['transactions','creditCards','ccTransactions','monthlyExpenses','monthlyStatus'];
+  const keys = ['transactions','creditCards','ccTransactions','loans','loanTransactions','monthlyExpenses','monthlyStatus'];
   fbListeners.forEach(r => r.off()); fbListeners = [];
   let loaded = 0;
   keys.forEach(key => {
@@ -544,19 +620,22 @@ function saveData() {
     db.ref('budget/transactions').set(toObj(state.transactions));
     db.ref('budget/creditCards').set(toObj(state.creditCards));
     db.ref('budget/ccTransactions').set(toObj(state.ccTransactions));
+    db.ref('budget/loans').set(toObj(state.loans));
+    db.ref('budget/loanTransactions').set(toObj(state.loanTransactions));
     db.ref('budget/monthlyExpenses').set(toObj(state.monthlyExpenses));
     db.ref('budget/monthlyStatus').set(state.monthlyStatus || {});
   } else {
     localStorage.setItem('budget-local', JSON.stringify({
       transactions: state.transactions, creditCards: state.creditCards,
-      ccTransactions: state.ccTransactions, monthlyExpenses: state.monthlyExpenses, monthlyStatus: state.monthlyStatus
+      ccTransactions: state.ccTransactions, loans: state.loans, loanTransactions: state.loanTransactions,
+      monthlyExpenses: state.monthlyExpenses, monthlyStatus: state.monthlyStatus
     }));
   }
 }
 
 function loadLocal() {
   const saved = localStorage.getItem('budget-local');
-  if (saved) { const d = JSON.parse(saved); Object.assign(state, { transactions: d.transactions||[], creditCards: d.creditCards||[], ccTransactions: d.ccTransactions||[], monthlyExpenses: d.monthlyExpenses||[], monthlyStatus: d.monthlyStatus||{} }); }
+  if (saved) { const d = JSON.parse(saved); Object.assign(state, { transactions: d.transactions||[], creditCards: d.creditCards||[], ccTransactions: d.ccTransactions||[], loans: d.loans||[], loanTransactions: d.loanTransactions||[], monthlyExpenses: d.monthlyExpenses||[], monthlyStatus: d.monthlyStatus||{} }); }
   render();
 }
 
@@ -569,11 +648,12 @@ function changeMonth(d) {
 }
 
 function showTab(tab) {
-  const tabs = ['overview','transactions','credit','monthly','settings'];
+  const tabs = ['overview','transactions','credit','loans','monthly','settings'];
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', tabs[i] === tab));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + tab).classList.add('active');
   if (tab === 'credit') populateCCGroupSelect('cc-group-select', -1, '');
+  if (tab === 'loans') { const today = new Date().toISOString().split('T')[0]; document.getElementById('ln-pay-date').value = today; }
 }
 
 function selectType(t) {
@@ -652,6 +732,81 @@ function saveCCTransaction() {
   render();
 }
 
+/* ---- Loans ---- */
+const loanTypeLabel = { bnpl: 'BNPL', cash: 'กดเงินสด/สินเชื่อ', installment: 'ผ่อนสินค้า', other: 'อื่นๆ' };
+
+function addLoan() {
+  const name = document.getElementById('ln-name').value.trim();
+  const debt = parseFloat(document.getElementById('ln-debt').value) || 0;
+  const monthly = parseFloat(document.getElementById('ln-monthly').value) || 0;
+  const dueday = parseInt(document.getElementById('ln-dueday').value) || 0;
+  const type = document.getElementById('ln-type').value;
+  const note = document.getElementById('ln-note').value.trim();
+  if (!name) { alert('กรุณากรอกชื่อ'); return; }
+  state.loans.push({ id: Date.now(), name, debt, monthly, dueday, type, note });
+  saveData();
+  ['ln-name','ln-debt','ln-monthly','ln-dueday','ln-note'].forEach(id => document.getElementById(id).value = '');
+  render();
+}
+
+function deleteLoan(id) {
+  if (!confirm('ลบรายการนี้?')) return;
+  state.loans = state.loans.filter(l => l.id !== id);
+  state.loanTransactions = state.loanTransactions.filter(t => t.loanId !== id);
+  saveData(); render();
+}
+
+function editLoan(id) {
+  const l = state.loans.find(x => x.id === id);
+  if (!l) return;
+  editingLnId = id;
+  document.getElementById('edit-ln-name').value = l.name;
+  document.getElementById('edit-ln-debt').value = l.debt || '';
+  document.getElementById('edit-ln-monthly').value = l.monthly || '';
+  document.getElementById('edit-ln-dueday').value = l.dueday || '';
+  document.getElementById('edit-ln-type').value = l.type || 'bnpl';
+  document.getElementById('edit-ln-note').value = l.note || '';
+  openModal('modal-ln');
+}
+
+function saveEditLoan() {
+  const l = state.loans.find(x => x.id === editingLnId);
+  if (!l) return;
+  const name = document.getElementById('edit-ln-name').value.trim();
+  if (!name) { alert('กรุณากรอกชื่อ'); return; }
+  l.name = name;
+  l.debt = parseFloat(document.getElementById('edit-ln-debt').value) || 0;
+  l.monthly = parseFloat(document.getElementById('edit-ln-monthly').value) || 0;
+  l.dueday = parseInt(document.getElementById('edit-ln-dueday').value) || 0;
+  l.type = document.getElementById('edit-ln-type').value;
+  l.note = document.getElementById('edit-ln-note').value.trim();
+  saveData(); closeModal('modal-ln'); render();
+}
+
+function openLoanPayment(loanId) {
+  const sel = document.getElementById('ln-select');
+  sel.innerHTML = state.loans.map(l => `<option value="${l.id}" ${l.id===loanId?'selected':''}>${l.name}</option>`).join('');
+  document.getElementById('loan-payment-form').style.display = 'block';
+  document.getElementById('loan-payment-form').scrollIntoView({behavior:'smooth'});
+}
+
+function saveLoanPayment() {
+  const loanId = parseInt(document.getElementById('ln-select').value);
+  const amount = parseFloat(document.getElementById('ln-pay-amount').value);
+  const date = document.getElementById('ln-pay-date').value;
+  const note = document.getElementById('ln-pay-note').value.trim();
+  if (!loanId || !amount || !date) { alert('กรุณากรอกข้อมูลให้ครบ'); return; }
+  const loan = state.loans.find(l => l.id === loanId);
+  if (!loan) return;
+  loan.debt = Math.max(0, (loan.debt || 0) - amount);
+  state.loanTransactions.unshift({ id: Date.now(), loanId, loanName: loan.name, amount, date, note });
+  saveData();
+  document.getElementById('ln-pay-amount').value = '';
+  document.getElementById('ln-pay-note').value = '';
+  document.getElementById('loan-payment-form').style.display = 'none';
+  render();
+}
+
 function addMonthlyExpense() {
   const name = document.getElementById('mo-name').value.trim();
   const amount = parseFloat(document.getElementById('mo-amount').value);
@@ -677,7 +832,7 @@ function toggleMonthlyPaid(id) {
 }
 
 function exportData() {
-  const blob = new Blob([JSON.stringify({ transactions: state.transactions, creditCards: state.creditCards, ccTransactions: state.ccTransactions, monthlyExpenses: state.monthlyExpenses, monthlyStatus: state.monthlyStatus }, null, 2)], {type:'application/json'});
+  const blob = new Blob([JSON.stringify({ transactions: state.transactions, creditCards: state.creditCards, ccTransactions: state.ccTransactions, loans: state.loans, loanTransactions: state.loanTransactions, monthlyExpenses: state.monthlyExpenses, monthlyStatus: state.monthlyStatus }, null, 2)], {type:'application/json'});
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
   a.download = 'budget-backup-' + new Date().toISOString().split('T')[0] + '.json'; a.click();
 }
@@ -689,7 +844,7 @@ function importData(e) {
     try {
       const d = JSON.parse(ev.target.result);
       if (!confirm('นำเข้าข้อมูลจะแทนที่ข้อมูลปัจจุบัน ยืนยัน?')) return;
-      Object.assign(state, { transactions: d.transactions||[], creditCards: d.creditCards||[], ccTransactions: d.ccTransactions||[], monthlyExpenses: d.monthlyExpenses||[], monthlyStatus: d.monthlyStatus||{} });
+      Object.assign(state, { transactions: d.transactions||[], creditCards: d.creditCards||[], ccTransactions: d.ccTransactions||[], loans: d.loans||[], loanTransactions: d.loanTransactions||[], monthlyExpenses: d.monthlyExpenses||[], monthlyStatus: d.monthlyStatus||{} });
       saveData(); render(); alert('นำเข้าสำเร็จ');
     } catch(err) { alert('ไฟล์ไม่ถูกต้อง'); }
   };
@@ -718,7 +873,7 @@ function render() {
   const txs = currentMonthTx();
   const income = txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const expense = txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
-  const totalDebt = state.creditCards.reduce((s,c)=>s+(c.debt||0),0);
+  const totalDebt = state.creditCards.reduce((s,c)=>s+(c.debt||0),0) + state.loans.reduce((s,l)=>s+(l.debt||0),0);
   document.getElementById('s-income').textContent = fmt(income);
   document.getElementById('s-expense').textContent = fmt(expense);
   document.getElementById('s-balance').textContent = fmt(income - expense);
@@ -782,6 +937,52 @@ function render() {
       </div>`;
     }).join('');
   }
+
+  // Loans render
+  const loanListEl = document.getElementById('loan-list');
+  if (!state.loans.length) {
+    loanListEl.innerHTML = '<div class="empty" style="background:#fff;border-radius:12px;border:1px solid #e8e8e0;padding:32px;">ยังไม่มีรายการสินเชื่อ</div>';
+  } else {
+    loanListEl.innerHTML = state.loans.map(l => {
+      const installmentsLeft = l.monthly > 0 ? Math.ceil((l.debt||0) / l.monthly) : null;
+      return `<div class="cc-card">
+        <div class="cc-header">
+          <div style="font-size:26px;flex-shrink:0">💸</div>
+          <div class="item-info">
+            <div class="cc-name">${l.name}</div>
+            <div style="font-size:12px;color:#888;margin-top:2px">${loanTypeLabel[l.type]||''}${l.dueday?' · ครบกำหนดวันที่ '+l.dueday:''}${l.note?' · '+l.note:''}</div>
+          </div>
+          <div class="item-actions">
+            <button class="btn-edit" onclick="editLoan(${l.id})">แก้ไข</button>
+            <button class="btn-danger" onclick="deleteLoan(${l.id})">ลบ</button>
+          </div>
+        </div>
+        <div class="cc-body">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span style="font-size:13px;color:#888">หนี้คงเหลือ</span>
+            <span class="cc-debt">${fmt(l.debt||0)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#888;margin-top:6px">
+            <span>ผ่อนต่อเดือน ${l.monthly>0?fmt(l.monthly):'-'}</span>
+            <span>${installmentsLeft!==null?'เหลือประมาณ '+installmentsLeft+' งวด':''}</span>
+          </div>
+        </div>
+        <div class="cc-actions">
+          <button class="btn btn-primary btn-sm" onclick="openLoanPayment(${l.id})">+ บันทึกการชำระ</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  if (state.loanTransactions.length) {
+    document.getElementById('loan-history-card').style.display = 'block';
+    document.getElementById('loan-history-list').innerHTML = state.loanTransactions.slice(0,20).map(t=>`
+      <div class="list-item">
+        <div class="item-dot" style="background:#4caf50"></div>
+        <div class="item-info"><div class="item-name">ชำระ: ${t.loanName}</div><div class="item-meta">${t.date}${t.note?' · '+t.note:''}</div></div>
+        <div class="item-amount amount-income">−${fmt(t.amount)}</div>
+      </div>`).join('');
+  } else { document.getElementById('loan-history-card').style.display = 'none'; }
 
   if (state.ccTransactions.length) {
     document.getElementById('cc-history-card').style.display = 'block';
