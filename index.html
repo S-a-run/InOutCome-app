@@ -113,7 +113,7 @@
   <div class="tabs">
     <div class="tab active" onclick="showTab('overview')">📊 ภาพรวม</div>
     <div class="tab" onclick="showTab('transactions')">📝 รายการ</div>
-    <div class="tab" onclick="showTab('credit')">💳 บัตรเครดิต</div>
+    <div class="tab" onclick="showTab('credit')">💳 บัตรเครดิต/บัตรกดเงินสด</div>
     <div class="tab" onclick="showTab('loans')">💸 ผ่อน/สินเชื่อ</div>
     <div class="tab" onclick="showTab('monthly')">📅 รายเดือน</div>
     <div class="tab" onclick="showTab('settings')">⚙️ ตั้งค่า</div>
@@ -835,7 +835,22 @@ function deleteMonthlyExpense(id) {
 
 function toggleMonthlyPaid(id) {
   const key = monthKey(state.currentYear, state.currentMonth) + '-' + id;
-  state.monthlyStatus[key] = !state.monthlyStatus[key];
+  const nowPaid = !state.monthlyStatus[key];
+  state.monthlyStatus[key] = nowPaid;
+
+  const expense = state.monthlyExpenses.find(e => e.id === id);
+  if (expense && expense.category) {
+    const ccMatch = state.creditCards.find(c => expense.category === '💳 ' + c.name);
+    const lnMatch = state.loans.find(l => expense.category === '💸 ' + l.name);
+    if (ccMatch) {
+      ccMatch.debt = (ccMatch.debt || 0) + (nowPaid ? -expense.amount : expense.amount);
+      if (ccMatch.debt < 0) ccMatch.debt = 0;
+    } else if (lnMatch) {
+      lnMatch.debt = (lnMatch.debt || 0) + (nowPaid ? -expense.amount : expense.amount);
+      if (lnMatch.debt < 0) lnMatch.debt = 0;
+    }
+  }
+
   saveData(); render();
 }
 
@@ -884,7 +899,7 @@ function populateMoCategory() {
     if (!sel) return;
     const cur = sel.value;
     sel.innerHTML = '<option value="">-- หมวดหมู่ --</option>' +
-      (ccOpts.length ? '<optgroup label="💳 บัตรเครดิต">' + ccOpts.map(o=>`<option>${o}</option>`).join('') + '</optgroup>' : '') +
+      (ccOpts.length ? '<optgroup label="💳 บัตรเครดิต/บัตรกดเงินสด">' + ccOpts.map(o=>`<option>${o}</option>`).join('') + '</optgroup>' : '') +
       (lnOpts.length ? '<optgroup label="💸 ผ่อน/สินเชื่อ">' + lnOpts.map(o=>`<option>${o}</option>`).join('') + '</optgroup>' : '') +
       '<optgroup label="หมวดหมู่">' + staticOpts.slice(1).map(o=>`<option>${o}</option>`).join('') + '</optgroup>';
     sel.value = cur;
