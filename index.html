@@ -265,7 +265,7 @@
         <select id="mo-category">
           <option value="">-- หมวดหมู่ --</option>
           <option>ที่อยู่อาศัย</option><option>สาธารณูปโภค</option><option>สื่อ/บันเทิง</option>
-          <option>ประกัน</option><option>การศึกษา</option><option>บัตรเครดิต</option><option>อื่นๆ</option>
+          <option>ประกัน</option><option>การศึกษา</option><option>อื่นๆ</option>
         </select>
       </div>
       <button class="btn btn-primary btn-sm" onclick="addMonthlyExpense()">+ เพิ่มรายการ</button>
@@ -388,7 +388,7 @@
       <select id="edit-mo-category">
         <option value="">-- หมวดหมู่ --</option>
         <option>ที่อยู่อาศัย</option><option>สาธารณูปโภค</option><option>สื่อ/บันเทิง</option>
-        <option>ประกัน</option><option>การศึกษา</option><option>บัตรเครดิต</option><option>อื่นๆ</option>
+        <option>ประกัน</option><option>การศึกษา</option><option>อื่นๆ</option>
       </select>
     </div>
     <div class="modal-actions">
@@ -874,6 +874,23 @@ function txItemHtml(t, editable) {
   </div>`;
 }
 
+function populateMoCategory() {
+  const staticOpts = ['-- หมวดหมู่ --','ที่อยู่อาศัย','สาธารณูปโภค','สื่อ/บันเทิง','ประกัน','การศึกษา','อื่นๆ'];
+  const ccOpts = state.creditCards.map(c => '💳 ' + c.name);
+  const lnOpts = state.loans.map(l => '💸 ' + l.name);
+  const allOpts = [...staticOpts.slice(1), ...ccOpts, ...lnOpts];
+  ['mo-category','edit-mo-category'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">-- หมวดหมู่ --</option>' +
+      (ccOpts.length ? '<optgroup label="💳 บัตรเครดิต">' + ccOpts.map(o=>`<option>${o}</option>`).join('') + '</optgroup>' : '') +
+      (lnOpts.length ? '<optgroup label="💸 ผ่อน/สินเชื่อ">' + lnOpts.map(o=>`<option>${o}</option>`).join('') + '</optgroup>' : '') +
+      '<optgroup label="หมวดหมู่">' + staticOpts.slice(1).map(o=>`<option>${o}</option>`).join('') + '</optgroup>';
+    sel.value = cur;
+  });
+}
+
 function render() {
   const mk = monthKey(state.currentYear, state.currentMonth);
   document.getElementById('currentMonthLabel').textContent = MONTHS_TH[state.currentMonth] + ' ' + (state.currentYear + 543);
@@ -882,6 +899,7 @@ function render() {
   const income = txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
   const expense = txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
   const totalDebt = state.creditCards.reduce((s,c)=>s+(c.debt||0),0) + state.loans.reduce((s,l)=>s+(l.debt||0),0);
+  populateMoCategory();
   const cumulativeBalance = state.transactions.reduce((s,t)=>t.type==='income'?s+t.amount:s-t.amount, 0);
   document.getElementById('s-income').textContent = fmt(income);
   document.getElementById('s-expense').textContent = fmt(expense);
