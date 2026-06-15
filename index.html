@@ -1118,7 +1118,9 @@ function render() {
   document.getElementById('s-income').textContent = fmt(income);
   document.getElementById('s-expense').textContent = fmt(expense);
   document.getElementById('s-balance').textContent = fmt(cumulativeBalance);
-  document.getElementById('s-balance-month').textContent = fmt(income - expense);
+  const monthNet = income - expense;
+  document.getElementById('s-balance-month').textContent = (monthNet < 0 ? '-' : '+') + fmt(monthNet);
+  document.getElementById('s-balance-month').style.color = monthNet < 0 ? '#f44336' : '#2d6a4f';
   document.getElementById('s-debt').textContent = fmt(totalDebt);
 
   // CC due date alerts
