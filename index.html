@@ -795,12 +795,54 @@ function saveCCTransaction() {
   if (!card) return;
   const isPayment = state.selectedCCAction === 'payment';
   card.debt = Math.max(0, (card.debt || 0) + (isPayment ? -amount : amount));
-  state.ccTransactions.unshift({ id: Date.now(), cardId, cardName: card.name, amount, date, note, type: state.selectedCCAction });
+  const txId = Date.now();
+  const ccTx = { id: txId, cardId, cardName: card.name, amount, date, note, type: state.selectedCCAction };
+  // ชำระบัตร → สร้าง transaction รายจ่ายอัตโนมัติ
+  if (isPayment) {
+    const mk = date.slice(0,7).replace('-','');
+    const [y,m] = date.split('-');
+    const mKey = y + '-' + m;
+    state.transactions.push({ id: txId + 1, type: 'expense', amount, name: 'ชำระบัตร: ' + card.name + (note?' ('+note+')':''), date, monthKey: mKey, category: 'บัตรเครดิต', autoFromCC: true, ccTxId: txId });
+    ccTx.linkedTxId = txId + 1;
+  }
+  state.ccTransactions.unshift(ccTx);
   saveData();
   document.getElementById('cc-pay-amount').value = '';
   document.getElementById('cc-pay-note').value = '';
   document.getElementById('cc-payment-form').style.display = 'none';
   render();
+}
+
+function deleteCCTx(id) {
+  const t = state.ccTransactions.find(x => x.id === id);
+  if (!t) return;
+  if (!confirm('ลบรายการนี้?')) return;
+  // คืนหนี้บัตร
+  const card = state.creditCards.find(c => c.id === t.cardId);
+  if (card) card.debt = Math.max(0, (card.debt || 0) + (t.type === 'payment' ? t.amount : -t.amount));
+  // ลบ transaction รายจ่ายที่ผูกไว้
+  if (t.linkedTxId) state.transactions = state.transactions.filter(x => x.id !== t.linkedTxId);
+  state.ccTransactions = state.ccTransactions.filter(x => x.id !== id);
+  saveData(); render();
+}
+
+function editCCTx(id) {
+  const t = state.ccTransactions.find(x => x.id === id);
+  if (!t) return;
+  const newAmount = parseFloat(prompt('แก้ไขจำนวนเงิน:', t.amount));
+  if (isNaN(newAmount) || newAmount <= 0) return;
+  const newNote = prompt('แก้ไขหมายเหตุ:', t.note || '') ?? t.note;
+  const diff = newAmount - t.amount;
+  const card = state.creditCards.find(c => c.id === t.cardId);
+  if (card) card.debt = Math.max(0, (card.debt || 0) + (t.type === 'payment' ? -diff : diff));
+  t.amount = newAmount;
+  t.note = newNote;
+  // อัพเดท transaction รายจ่ายที่ผูกไว้
+  if (t.linkedTxId) {
+    const linked = state.transactions.find(x => x.id === t.linkedTxId);
+    if (linked) { linked.amount = newAmount; linked.name = 'ชำระบัตร: ' + t.cardName + (newNote?' ('+newNote+')':''); }
+  }
+  saveData(); render();
 }
 
 /* ---- Loans ---- */
@@ -1138,7 +1180,13 @@ function render() {
       <div class="list-item">
         <div class="item-dot" style="background:${t.type==='payment'?'#4caf50':'#f44336'}"></div>
         <div class="item-info"><div class="item-name">${t.type==='payment'?'ชำระ':'ใช้จ่าย'}: ${t.cardName}</div><div class="item-meta">${t.date}${t.note?' · '+t.note:''}</div></div>
-        <div class="item-amount ${t.type==='payment'?'amount-income':'amount-expense'}">${t.type==='payment'?'−':'+'}${fmt(t.amount)}</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="item-amount ${t.type==='payment'?'amount-income':'amount-expense'}">${t.type==='payment'?'−':'+'}${fmt(t.amount)}</div>
+          <div class="item-actions">
+            <button class="btn-edit" onclick="editCCTx(${t.id})">แก้ไข</button>
+            <button class="btn-danger" onclick="deleteCCTx(${t.id})">ลบ</button>
+          </div>
+        </div>
       </div>`).join('');
   } else { document.getElementById('cc-history-card').style.display = 'none'; }
 
