@@ -1174,9 +1174,10 @@ function render() {
       </div>`).join('');
   } else { document.getElementById('loan-history-card').style.display = 'none'; }
 
-  if (state.ccTransactions.length) {
+  const ccTxThisMonth = state.ccTransactions.filter(t => t.date && t.date.startsWith(state.currentYear+'-'+(String(state.currentMonth+1).padStart(2,'0'))));
+  if (ccTxThisMonth.length) {
     document.getElementById('cc-history-card').style.display = 'block';
-    document.getElementById('cc-history-list').innerHTML = state.ccTransactions.slice(0,20).map(t=>`
+    document.getElementById('cc-history-list').innerHTML = ccTxThisMonth.map(t=>`
       <div class="list-item">
         <div class="item-dot" style="background:${t.type==='payment'?'#4caf50':'#f44336'}"></div>
         <div class="item-info"><div class="item-name">${t.type==='payment'?'ชำระ':'ใช้จ่าย'}: ${t.cardName}</div><div class="item-meta">${t.date}${t.note?' · '+t.note:''}</div></div>
