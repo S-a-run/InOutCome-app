@@ -245,6 +245,9 @@ if (sessionStorage.getItem('pin_ok') === '1') {
       <button class="btn btn-primary btn-sm" onclick="addCreditCard()">+ เพิ่มบัตร</button>
     </div>
     <div id="cc-list"></div>
+    <div style="padding:0 4px 12px">
+      <button class="btn btn-primary" onclick="openCCPayment(null)" style="width:100%">+ บันทึกรายการ</button>
+    </div>
     <div class="form-card" id="cc-payment-form" style="display:none">
       <h3>บันทึกการชำระ / รายการใช้จ่าย</h3>
       <div class="chip-row" id="cc-action-chips">
@@ -781,6 +784,7 @@ function deleteCreditCard(id) {
 function openCCPayment(cardId) {
   const sel = document.getElementById('cc-select-card');
   sel.innerHTML = state.creditCards.map(c => `<option value="${c.id}" ${c.id===cardId?'selected':''}>${c.name}</option>`).join('');
+  if (!cardId && state.creditCards.length) sel.value = state.creditCards[0].id;
   document.getElementById('cc-payment-form').style.display = 'block';
   document.getElementById('cc-payment-form').scrollIntoView({behavior:'smooth'});
 }
@@ -1120,9 +1124,6 @@ function render() {
           </div>
           <div class="cc-progress"><div class="cc-progress-bar" style="width:${pct.toFixed(0)}%;background:${color}"></div></div>
           <div class="cc-amounts"><span>ใช้ไป ${pct.toFixed(0)}%</span><span>วงเงิน ${limitLabel}</span></div>
-        </div>
-        <div class="cc-actions">
-          <button class="btn btn-primary btn-sm" onclick="openCCPayment(${c.id})">+ บันทึกรายการ</button>
         </div>
       </div>`;
     }).join('');
