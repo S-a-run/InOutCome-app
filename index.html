@@ -247,7 +247,6 @@ if (sessionStorage.getItem('pin_ok') === '1') {
     <div style="padding:0 4px 12px">
       <button class="btn btn-primary" onclick="openCCPayment(null)" style="width:100%">+ บันทึกรายการ</button>
     </div>
-    <div id="cc-list"></div>
     <div class="form-card" id="cc-payment-form" style="display:none">
       <h3>บันทึกการชำระ / รายการใช้จ่าย</h3>
       <div class="chip-row" id="cc-action-chips">
@@ -267,6 +266,7 @@ if (sessionStorage.getItem('pin_ok') === '1') {
         <button class="btn btn-outline btn-sm" onclick="document.getElementById('cc-payment-form').style.display='none'">ยกเลิก</button>
       </div>
     </div>
+    <div id="cc-list"></div>
   </div>
 
   <!-- Loans -->
