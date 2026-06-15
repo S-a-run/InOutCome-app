@@ -827,7 +827,8 @@ function openCCHistory(cardId) {
   const card = state.creditCards.find(c => c.id === cardId);
   if (!card) return;
   document.getElementById('cc-history-modal-title').textContent = 'ประวัติรายการ: ' + card.name;
-  const txs = state.ccTransactions.filter(t => t.cardId === cardId);
+  const curMonth = state.currentYear+'-'+(String(state.currentMonth+1).padStart(2,'0'));
+  const txs = state.ccTransactions.filter(t => t.cardId === cardId && t.date && t.date.startsWith(curMonth));
   document.getElementById('cc-history-modal-list').innerHTML = txs.length ? txs.map(t => `
     <div class="list-item">
       <div class="item-dot" style="background:${t.type==='payment'?'#4caf50':'#f44336'}"></div>
