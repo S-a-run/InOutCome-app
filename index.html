@@ -1,649 +1,1294 @@
 <!DOCTYPE html>
-<html>
+<html lang="th">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="./support.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>บัญชีรายรับ-รายจ่าย</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Sarabun', sans-serif; background: #f5f5f0; color: #1a1a1a; font-size: 16px; }
+  .app { max-width: 800px; margin: 0 auto; padding: 0 0 80px; }
+
+  .header { background: #fff; border-bottom: 1px solid #e0e0d8; padding: 16px; text-align: center; position: sticky; top: 0; z-index: 100; }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .month-nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 8px; }
+  .month-nav button { background: none; border: 1px solid #d0d0c8; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 16px; }
+  .month-nav span { font-size: 15px; font-weight: 500; min-width: 130px; text-align: center; }
+  .sync-status { font-size: 11px; margin-top: 4px; }
+  .sync-ok { color: #2e7d32; } .sync-off { color: #aaa; } .sync-err { color: #c62828; }
+
+  .tabs { display: flex; background: #fff; border-bottom: 1px solid #e0e0d8; position: sticky; top: 68px; z-index: 99; overflow-x: auto; }
+  .tab { flex: 1; min-width: 60px; padding: 12px 4px; text-align: center; font-size: 12px; cursor: pointer; border-bottom: 3px solid transparent; color: #666; white-space: nowrap; }
+  .tab.active { border-bottom-color: #4a7c59; color: #4a7c59; font-weight: 600; }
+
+  .section { padding: 16px; }
+  .page { display: none; } .page.active { display: block; }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+  .summary-card { background: #fff; border-radius: 12px; padding: 14px; border: 1px solid #e8e8e0; }
+  .summary-card .label { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .summary-card .amount { font-size: 20px; font-weight: 600; }
+  .summary-card.income .amount { color: #2e7d32; }
+  .summary-card.expense .amount { color: #c62828; }
+  .summary-card.balance .amount { color: #1565c0; }
+  .summary-card.debt .amount { color: #e65100; }
+
+  .form-card { background: #fff; border-radius: 12px; padding: 16px; border: 1px solid #e8e8e0; margin-bottom: 16px; }
+  .form-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #444; }
+  .form-row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .form-row input, .form-row select, .form-row textarea { flex: 1; min-width: 0; border: 1px solid #d8d8d0; border-radius: 8px; padding: 10px 12px; font-size: 14px; font-family: 'Sarabun', sans-serif; background: #fafafa; }
+  .form-row textarea { resize: vertical; min-height: 70px; }
+  .form-row input:focus, .form-row select:focus, .form-row textarea:focus { outline: none; border-color: #4a7c59; background: #fff; }
+
+  .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'Sarabun', sans-serif; }
+  .btn-primary { background: #4a7c59; color: #fff; }
+  .btn-danger { background: #ffebee; color: #c62828; border: none; border-radius: 6px; cursor: pointer; font-family: 'Sarabun', sans-serif; padding: 5px 10px; font-size: 12px; }
+  .btn-edit { background: #e8f0fb; color: #1565c0; border: none; border-radius: 6px; cursor: pointer; font-family: 'Sarabun', sans-serif; padding: 5px 10px; font-size: 12px; }
+  .btn-sm { padding: 8px 16px; font-size: 13px; }
+  .btn-outline { background: none; border: 1px solid #d0d0c8; color: #555; }
+
+  .list-card { background: #fff; border-radius: 12px; border: 1px solid #e8e8e0; overflow: hidden; margin-bottom: 16px; }
+  .list-card h3 { font-size: 14px; font-weight: 600; padding: 14px 16px; border-bottom: 1px solid #f0f0e8; color: #444; }
+  .list-item { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #f5f5f0; gap: 10px; }
+  .list-item:last-child { border-bottom: none; }
+  .item-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-income { background: #4caf50; } .dot-expense { background: #f44336; }
+  .item-info { flex: 1; min-width: 0; }
+  .item-name { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item-meta { font-size: 12px; color: #888; margin-top: 2px; }
+  .item-amount { font-size: 14px; font-weight: 600; text-align: right; white-space: nowrap; }
+  .amount-income { color: #2e7d32; } .amount-expense { color: #c62828; }
+  .empty { text-align: center; padding: 32px; color: #aaa; font-size: 14px; }
+  .item-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+  .cc-card { background: #fff; border-radius: 12px; border: 1px solid #e8e8e0; margin-bottom: 12px; overflow: hidden; }
+  .cc-header { display: flex; align-items: center; padding: 14px 16px; gap: 10px; border-bottom: 1px solid #f0f0e8; }
+  .cc-name { flex: 1; font-size: 15px; font-weight: 600; }
+  .cc-body { padding: 12px 16px; }
+  .cc-progress { background: #f0f0e8; border-radius: 4px; height: 6px; margin: 8px 0; overflow: hidden; }
+  .cc-progress-bar { height: 100%; border-radius: 4px; }
+  .cc-amounts { display: flex; justify-content: space-between; font-size: 12px; color: #888; }
+  .cc-debt { font-size: 18px; font-weight: 700; color: #e65100; }
+  .cc-actions { display: flex; gap: 8px; padding: 0 16px 14px; flex-wrap: wrap; }
+  .cc-group-badge { font-size: 11px; background: #e8f0fb; color: #1565c0; padding: 2px 8px; border-radius: 10px; }
+
+  .monthly-item { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #f5f5f0; gap: 10px; }
+  .monthly-item:last-child { border-bottom: none; }
+  .monthly-status { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #d0d0c8; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; font-size: 14px; }
+  .monthly-status.paid { background: #4caf50; border-color: #4caf50; color: #fff; }
+
+  .chip { display: inline-block; padding: 4px 12px; border-radius: 10px; font-size: 13px; background: #f0f0e8; color: #555; cursor: pointer; border: 1px solid transparent; }
+  .chip.selected { background: #e8f0eb; border-color: #4a7c59; color: #4a7c59; font-weight: 600; }
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 500; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .modal-overlay.hidden { display: none; }
+  .modal { background: #fff; border-radius: 16px; padding: 20px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  .setup-box { background: #fff; border-radius: 12px; border: 2px dashed #c8e6c9; padding: 20px; margin-bottom: 16px; }
+  .setup-box h3 { font-size: 15px; font-weight: 600; color: #2e7d32; margin-bottom: 8px; }
+  .setup-box ol { font-size: 13px; color: #555; line-height: 2; padding-left: 18px; margin-bottom: 12px; }
+  .setup-box a { color: #1565c0; }
+  .setup-box code { background: #f5f5f0; padding: 1px 6px; border-radius: 4px; font-size: 12px; font-family: monospace; }
+
+  @media (min-width: 600px) { .summary-grid { grid-template-columns: repeat(4, 1fr); } }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<x-dc>
-<helmet>
-<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,1,0&display=swap" rel="stylesheet">
-<style>
-@keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
-* { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-body { margin:0; padding:0; font-family:'Sarabun',sans-serif; }
-::-webkit-scrollbar { display:none; }
-</style>
-</helmet>
-
-<div style="{{ S.page }}">
-
-  <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
-    <div style="{{ S.appTitle }}">InOutCome</div>
-    <div style="{{ S.appSub }}">แอปบัญชีรายรับ–รายจ่าย</div>
+<div id="pin-overlay" style="position:fixed;inset:0;background:#f5f5f0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999">
+  <div style="font-size:32px;margin-bottom:8px">🔒</div>
+  <div style="font-size:20px;font-weight:700;margin-bottom:4px">บัญชีรายรับ-รายจ่าย</div>
+  <div style="font-size:14px;color:#888;margin-bottom:24px">กรอก PIN 6 หลัก</div>
+  <div style="display:flex;gap:12px;margin-bottom:20px" id="pin-dots">
+    <div style="width:14px;height:14px;border-radius:50%;border:2px solid #ccc;background:#fff" id="dot-0"></div>
+    <div style="width:14px;height:14px;border-radius:50%;border:2px solid #ccc;background:#fff" id="dot-1"></div>
+    <div style="width:14px;height:14px;border-radius:50%;border:2px solid #ccc;background:#fff" id="dot-2"></div>
+    <div style="width:14px;height:14px;border-radius:50%;border:2px solid #ccc;background:#fff" id="dot-3"></div>
+    <div style="width:14px;height:14px;border-radius:50%;border:2px solid #ccc;background:#fff" id="dot-4"></div>
+    <div style="width:14px;height:14px;border-radius:50%;border:2px solid #ccc;background:#fff" id="dot-5"></div>
   </div>
-
-  <div style="{{ S.themeRow }}">
-    <span style="{{ S.themeLabel }}">ธีม</span>
-    <sc-for list="{{ themes }}" as="thm" hint-placeholder-count="3">
-      <button onClick="{{ thm.onSet }}" style="{{ thm.swatchStyle }}" title="{{ thm.name }}"></button>
-    </sc-for>
-  </div>
-
-  <div style="{{ S.phone }}">
-
-    <div style="{{ S.statusBar }}">
-      <span style="{{ S.statusTime }}">21:45</span>
-      <div style="position:absolute;left:50%;transform:translateX(-50%);top:0;width:126px;height:36px;background:#000;border-radius:0 0 22px 22px;"></div>
-      <span style="{{ S.statusIcons }}">▌▌▌ ⚡</span>
-    </div>
-
-    <div style="overflow-y:auto;overflow-x:hidden;height:660px;min-height:660px;flex-shrink:0;">
-
-      <!-- TAB 0 ภาพรวม -->
-      <sc-if value="{{ isTab0 }}" hint-placeholder-val="{{ true }}">
-        <div style="padding-bottom:30px;animation:fadeUp 0.25s ease;">
-          <div style="padding:18px 24px 12px;display:flex;justify-content:space-between;align-items:flex-start;">
-            <div>
-              <div style="{{ S.balLbl }}">คงเหลือสะสม</div>
-              <div style="{{ balStyle }}">{{ balDisplay }}</div>
-              <div style="{{ S.dateLbl }}">ณ 22 มิถุนายน 2569</div>
-            </div>
-            <div style="{{ S.monthNav }}">
-              <button onClick="{{ prevMonth }}" style="{{ S.mnBtn }}">‹</button>
-              <span style="{{ S.mnTxt }}">{{ monthLabel }}</span>
-              <button onClick="{{ nextMonth }}" style="{{ S.mnBtn }}">›</button>
-            </div>
-          </div>
-
-          <div style="display:flex;gap:10px;padding:0 24px 18px;">
-            <div style="{{ S.incPill }}">
-              <div style="{{ S.incLbl }}">↑ รายรับ</div>
-              <div style="{{ S.incAmt }}">{{ mIncome }}</div>
-            </div>
-            <div style="{{ S.expPill }}">
-              <div style="{{ S.expLbl }}">↓ รายจ่าย</div>
-              <div style="{{ S.expAmt }}">{{ mExpense }}</div>
-            </div>
-          </div>
-
-          <div style="{{ S.alertBox }}">
-            <div style="{{ S.alertIcon }}"><span class="material-symbols-rounded" style="{{ S.alertIconGlyph }}">credit_card</span></div>
-            <div>
-              <div style="{{ S.alertTitle }}">บัตร KTC ครบกำหนดใน 3 วัน</div>
-              <div style="{{ S.alertSub }}">ครบ 25 มิ.ย. · ยอดค้าง ฿18,500.00</div>
-            </div>
-          </div>
-
-          <div style="padding:0 24px 10px;display:flex;justify-content:space-between;align-items:center;">
-            <span style="{{ S.secTitle }}">รายการล่าสุด</span>
-            <span style="{{ S.seeAll }}">ดูทั้งหมด ›</span>
-          </div>
-
-          <sc-for list="{{ recentTx }}" as="tx" hint-placeholder-count="4">
-            <div style="{{ S.txRow }}">
-              <div style="{{ tx.ibg }}"><span class="material-symbols-rounded" style="{{ tx.ico }}">{{ tx.icon }}</span></div>
-              <div style="flex:1;min-width:0;">
-                <div style="{{ S.txName }}">{{ tx.name }}</div>
-                <div style="{{ S.txSub }}">{{ tx.category }}</div>
-              </div>
-              <div style="text-align:right;flex-shrink:0;">
-                <div style="{{ tx.amtStyle }}">{{ tx.amtFmt }}</div>
-                <div style="{{ S.txSub }}">{{ tx.dateFmt }}</div>
-              </div>
-            </div>
-          </sc-for>
-
-          <sc-if value="{{ hasUnpaid }}" hint-placeholder-val="{{ true }}">
-            <div style="{{ S.unpaidWrap }}">
-              <div style="{{ S.unpaidHdr }}">
-                <span style="{{ S.txName }}">ยังไม่ได้จ่ายเดือนนี้</span>
-                <span style="{{ S.negBadge }}">{{ unpaidCountTxt }}</span>
-              </div>
-              <sc-for list="{{ unpaidList }}" as="u" hint-placeholder-count="2">
-                <div style="{{ S.unpaidRow }}">
-                  <div>
-                    <div style="{{ S.txName }}">{{ u.name }}</div>
-                    <div style="{{ S.txSub }}">ครบ {{ u.dueday }} ของเดือน</div>
-                  </div>
-                  <div style="{{ S.negAmt }}">{{ u.amtFmt }}</div>
-                </div>
-              </sc-for>
-              <div style="{{ S.unpaidFoot }}">
-                <span style="{{ S.txSub }}">รวมที่ยังค้างอยู่</span>
-                <span style="{{ S.negAmtLg }}">{{ unpaidTotal }}</span>
-              </div>
-            </div>
-          </sc-if>
-        </div>
-      </sc-if>
-
-      <!-- TAB 1 รายการ -->
-      <sc-if value="{{ isTab1 }}">
-        <div style="padding-bottom:30px;animation:fadeUp 0.25s ease;">
-          <div style="padding:18px 24px 14px;display:flex;justify-content:space-between;align-items:center;">
-            <div style="{{ S.pgTitle }}">รายการ</div>
-            <button style="{{ S.addGreen }}"><span class="material-symbols-rounded" style="{{ S.addGreenIco }}">add</span></button>
-          </div>
-          <div style="padding:0 24px 16px;display:flex;gap:8px;">
-            <div style="{{ filterOn }}">ทั้งหมด</div>
-            <div style="{{ filterOff }}">รายรับ</div>
-            <div style="{{ filterOff }}">รายจ่าย</div>
-          </div>
-          <div style="{{ S.dgHdr }}">วันนี้ · 21 มิ.ย.</div>
-          <sc-for list="{{ allTx }}" as="tx" hint-placeholder-count="6">
-            <div style="{{ S.txRow1 }}">
-              <div style="{{ tx.ibg }}"><span class="material-symbols-rounded" style="{{ tx.ico }}">{{ tx.icon }}</span></div>
-              <div style="flex:1;min-width:0;">
-                <div style="{{ S.txName }}">{{ tx.name }}</div>
-                <div style="{{ S.txSub }}">{{ tx.category }} · {{ tx.dateFmt }}</div>
-              </div>
-              <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-                <div style="{{ tx.amtStyle }}">{{ tx.amtFmt }}</div>
-                <button style="{{ S.moreBtn }}"><span class="material-symbols-rounded" style="{{ S.moreIco }}">more_horiz</span></button>
-              </div>
-            </div>
-          </sc-for>
-        </div>
-      </sc-if>
-
-      <!-- TAB 2 บัตรเครดิต -->
-      <sc-if value="{{ isTab2 }}">
-        <div style="padding-bottom:30px;animation:fadeUp 0.25s ease;">
-          <div style="padding:18px 24px 10px;display:flex;justify-content:space-between;align-items:center;">
-            <div style="{{ S.pgTitle }}">บัตรเครดิต</div>
-            <button style="{{ S.addGray }}"><span class="material-symbols-rounded" style="{{ S.addGrayIco }}">add</span></button>
-          </div>
-          <div style="padding:6px 24px 18px;">
-            <button style="{{ S.recBtn }}">
-              <span class="material-symbols-rounded" style="{{ S.recBtnIco }}">add_card</span>
-              <span style="{{ S.recBtnTxt }}">บันทึกรายการบัตร</span>
-            </button>
-          </div>
-          <sc-for list="{{ cardsView }}" as="card" hint-placeholder-count="2">
-            <div style="margin:0 24px 20px;">
-              <div style="{{ card.cardStyle }}">
-                <div style="position:absolute;right:-30px;top:-30px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,0.04);"></div>
-                <div style="position:absolute;right:20px;bottom:-50px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,0.05);"></div>
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1;">
-                  <span style="font-size:18px;font-weight:800;color:rgba(255,255,255,0.9);font-family:'Sarabun',sans-serif;">{{ card.name }}</span>
-                  <span class="material-symbols-rounded" style="font-size:30px;color:rgba(255,255,255,0.5);">credit_card</span>
-                </div>
-                <div style="position:relative;z-index:1;">
-                  <div style="width:38px;height:28px;background:linear-gradient(135deg,rgba(255,200,50,0.85),rgba(200,140,20,0.7));border-radius:5px;margin-bottom:14px;"></div>
-                  <div style="font-size:13px;color:rgba(255,255,255,0.5);letter-spacing:3px;">•••• •••• •••• 4521</div>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:flex-end;position:relative;z-index:1;">
-                  <div>
-                    <div style="font-size:9px;color:rgba(255,255,255,0.4);letter-spacing:0.8px;margin-bottom:2px;">CREDIT LIMIT</div>
-                    <div style="font-size:14px;font-weight:700;color:rgba(255,255,255,0.9);font-family:'Sarabun',sans-serif;">{{ card.limitDisplay }}</div>
-                  </div>
-                  <div style="text-align:right;">
-                    <div style="font-size:9px;color:rgba(255,255,255,0.4);letter-spacing:0.8px;margin-bottom:2px;">VALID THRU</div>
-                    <div style="font-size:14px;font-weight:700;color:rgba(255,255,255,0.9);">12/28</div>
-                  </div>
-                </div>
-              </div>
-              <div style="{{ S.cardDetail }}">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                  <span style="{{ S.txSub }}">ยอดใช้ไป</span>
-                  <span style="{{ S.txName }}">{{ card.debtDisplay }}</span>
-                </div>
-                <div style="{{ S.barTrack }}"><div style="{{ card.barStyle }}"></div></div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:14px;">
-                  <span style="{{ S.txSub }}">{{ card.pctLabel }}</span>
-                  <span style="{{ S.accentTxt }}">{{ card.availDisplay }}</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                  <div style="display:flex;gap:18px;">
-                    <div>
-                      <div style="{{ S.txSub }}">วันสรุปยอด</div>
-                      <div style="{{ S.txName }}">{{ card.cutday }}</div>
-                    </div>
-                    <div style="{{ S.vDivider }}"></div>
-                    <div>
-                      <div style="{{ S.txSub }}">ครบกำหนด</div>
-                      <div style="{{ S.warnTxt }}">{{ card.dueday }}</div>
-                    </div>
-                  </div>
-                  <button style="{{ S.histBtn }}">
-                    <span class="material-symbols-rounded" style="{{ S.histIco }}">history</span>
-                    <span style="{{ S.histTxt }}">ประวัติ</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </sc-for>
-        </div>
-      </sc-if>
-
-      <!-- TAB 3 ผ่อน/สินเชื่อ -->
-      <sc-if value="{{ isTab3 }}">
-        <div style="padding-bottom:30px;animation:fadeUp 0.25s ease;">
-          <div style="padding:18px 24px 10px;display:flex;justify-content:space-between;align-items:center;">
-            <div style="{{ S.pgTitle }}">ผ่อน/สินเชื่อ</div>
-            <button style="{{ S.addGray }}"><span class="material-symbols-rounded" style="{{ S.addGrayIco }}">add</span></button>
-          </div>
-          <sc-for list="{{ loansView }}" as="loan" hint-placeholder-count="2">
-            <div style="{{ S.loanCard }}">
-              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-                <div style="{{ loan.ibg }}"><span class="material-symbols-rounded" style="{{ loan.ico }}">{{ loan.typeIcon }}</span></div>
-                <div style="flex:1;">
-                  <div style="{{ S.txName }}">{{ loan.name }}</div>
-                  <div style="{{ S.txSub }}">ครบกำหนด {{ loan.dueday }} ของเดือน</div>
-                </div>
-              </div>
-              <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px;">
-                <div>
-                  <div style="{{ S.fieldLbl }}">ยอดคงเหลือ</div>
-                  <div style="{{ S.loanDebt }}">{{ loan.debtDisplay }}</div>
-                </div>
-                <div style="text-align:right;">
-                  <div style="{{ S.fieldLbl }}">ต่อเดือน</div>
-                  <div style="{{ S.loanMonthly }}">{{ loan.monthlyDisplay }}</div>
-                </div>
-              </div>
-              <div style="{{ S.loanBarTrack }}"><div style="{{ loan.progressStyle }}"></div></div>
-              <div style="{{ S.paidLbl }}">{{ loan.paidLabel }}</div>
-              <button style="{{ loan.payBtn }}">
-                <span class="material-symbols-rounded" style="{{ loan.payIco }}">payments</span>
-                <span style="{{ loan.payTxt }}">บันทึกการชำระ</span>
-              </button>
-            </div>
-          </sc-for>
-        </div>
-      </sc-if>
-
-      <!-- TAB 4 รายเดือน -->
-      <sc-if value="{{ isTab4 }}">
-        <div style="padding-bottom:30px;animation:fadeUp 0.25s ease;">
-          <div style="padding:18px 24px 6px;">
-            <div style="{{ S.pgTitle }}">รายจ่ายประจำเดือน</div>
-            <div style="{{ S.txSub }}">{{ monthLabel }}</div>
-          </div>
-          <div style="{{ S.mSummary }}">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-              <div>
-                <div style="{{ S.txSub }}">จ่ายแล้ว {{ paidCountTxt }}</div>
-                <div style="{{ S.mBarTrack }}"><div style="{{ mProgressStyle }}"></div></div>
-              </div>
-              <div style="text-align:right;">
-                <div style="{{ S.fieldLbl }}">รวมทั้งหมด</div>
-                <div style="{{ S.mTotalAmt }}">{{ totalMonthly }}</div>
-              </div>
-            </div>
-          </div>
-          <sc-for list="{{ monthlyData }}" as="item" hint-placeholder-count="5">
-            <div style="{{ item.rowStyle }}">
-              <div style="{{ item.checkStyle }}"><span style="{{ item.checkMarkStyle }}">✓</span></div>
-              <div style="flex:1;min-width:0;">
-                <div style="{{ S.txName }}">{{ item.name }}</div>
-                <div style="{{ S.txSub }}">{{ item.category }} · ครบ {{ item.dueday }}</div>
-              </div>
-              <div style="{{ S.txName }}">{{ item.amtFmt }}</div>
-            </div>
-          </sc-for>
-          <div style="{{ S.mFooter }}">
-            <span style="{{ S.txSub }}">จ่ายไปแล้ว</span>
-            <span style="{{ S.mFooterAmt }}">{{ paidTotal }}</span>
-          </div>
-        </div>
-      </sc-if>
-
-      <!-- TAB 5 ตั้งค่า -->
-      <sc-if value="{{ isTab5 }}">
-        <div style="padding-bottom:30px;animation:fadeUp 0.25s ease;">
-          <div style="padding:18px 24px 16px;"><div style="{{ S.pgTitle }}">ตั้งค่า</div></div>
-
-          <div style="padding:0 24px 18px;">
-            <div style="{{ S.secLbl }}">Firebase</div>
-            <div style="{{ S.sCard }}">
-              <div style="{{ S.sRowB }}">
-                <div style="{{ S.statusDot }}"></div>
-                <span style="{{ S.connTxt }}">เชื่อมต่อแล้ว</span>
-              </div>
-              <div style="{{ S.sRowB }}">
-                <div style="{{ S.fldLbl }}">DATABASE URL</div>
-                <div style="{{ S.fldVal }}">s-a-run-default-rtdb.firebase...</div>
-              </div>
-              <div style="{{ S.sRowL }}">
-                <div style="{{ S.fldLbl }}">API KEY</div>
-                <div style="{{ S.fldVal }}">AIzaSy••••••••••••••••••</div>
-              </div>
-            </div>
-          </div>
-
-          <div style="padding:0 24px 18px;">
-            <div style="{{ S.secLbl }}">จัดการข้อมูล</div>
-            <div style="display:flex;gap:10px;">
-              <button style="{{ S.ioBtn }}">
-                <span class="material-symbols-rounded" style="{{ S.expIco }}">download</span>
-                <span style="{{ S.ioBtnTxt }}">Export JSON</span>
-              </button>
-              <button style="{{ S.ioBtn }}">
-                <span class="material-symbols-rounded" style="{{ S.impIco }}">upload</span>
-                <span style="{{ S.ioBtnTxt }}">Import JSON</span>
-              </button>
-            </div>
-          </div>
-
-          <div style="padding:0 24px 18px;">
-            <div style="{{ S.secLbl }}">ความปลอดภัย</div>
-            <div style="{{ S.sCard }}">
-              <div style="{{ S.pinRow }}">
-                <div style="display:flex;align-items:center;gap:10px;">
-                  <span class="material-symbols-rounded" style="{{ S.pinIco }}">lock</span>
-                  <div>
-                    <div style="{{ S.txName }}">PIN Lock</div>
-                    <div style="{{ S.txSub }}">6 หลัก</div>
-                  </div>
-                </div>
-                <div style="{{ S.pinToggle }}"><div style="position:absolute;right:3px;top:3px;width:20px;height:20px;background:#fff;border-radius:50%;"></div></div>
-              </div>
-              <div style="{{ S.sRowL }}"><span style="{{ S.pinChangeTxt }}">เปลี่ยน PIN ›</span></div>
-            </div>
-          </div>
-
-          <div style="padding:0 24px;text-align:center;padding-top:8px;padding-bottom:20px;">
-            <div style="{{ S.infoTitle }}">InOutCome</div>
-            <div style="{{ S.txSub }}">Version 1.0.0 · GitHub Pages</div>
-            <div style="{{ S.infoUrl }}">s-a-run.github.io/InOutCome-app/</div>
-          </div>
-        </div>
-      </sc-if>
-
-    </div>
-
-    <div style="{{ S.tabBar }}">
-      <sc-for list="{{ tabs }}" as="ti" hint-placeholder-count="6">
-        <button onClick="{{ ti.onTap }}" style="{{ ti.btnStyle }}">
-          <span class="material-symbols-rounded" style="{{ ti.iconStyle }}">{{ ti.icon }}</span>
-          <span style="{{ ti.labelStyle }}">{{ ti.label }}</span>
-        </button>
-      </sc-for>
-    </div>
-
+  <div id="pin-error" style="color:#f44336;font-size:13px;margin-bottom:12px;min-height:18px"></div>
+  <div style="display:grid;grid-template-columns:repeat(3,72px);gap:10px">
+    <button onclick="pinPress('1')" style="height:72px;font-size:22px;font-weight:600;border:none;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);cursor:pointer">1</button>
+    <button onclick="pinPress('2')" style="height:72px;font-size:22px;font-weight:600;border:none;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);cursor:pointer">2</button>
+    <button onclick="pinPress('3')" style="height:72px;font-size:22px;font-weight:600;border:none;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);cursor:pointer">3</button>
+    <button onclick="pinPress('4')" style="height:72px;font-size:22px;font-weight:600;border:none;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);cursor:pointer">4</button>
+    <button onclick="pinPress('5')" style="height:72px;font-size:22px;font-weight:600;border:none;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);cursor:pointer">5</button>
+    <button onclick="pinPress('6')" style="height:72px;font-size:22px;font-weight:600;border:none;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);cursor:pointer">6</button>
+    <button onclick="pinPress('7')" style="height:72px;font-size:22px;font-weight:600;border:none;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);cursor:pointer">7</button>
+    <button onclick="pinPress('8')" style="height:72px;font-size:22px;font-weight:600;border:none;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);cursor:pointer">8</button>
+    <button onclick="pinPress('9')" style="height:72px;font-size:22px;font-weight:600;border:none;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);cursor:pointer">9</button>
+    <button onclick="pinDel()" style="height:72px;font-size:18px;border:none;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);cursor:pointer">⌫</button>
+    <button onclick="pinPress('0')" style="height:72px;font-size:22px;font-weight:600;border:none;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1);cursor:pointer">0</button>
+    <div></div>
   </div>
 </div>
-</x-dc>
-<script type="text/x-dc" data-dc-script>
-class Component extends DCLogic {
-  state = { tab: 0, theme: 'forest', month: 5, year: 2026 };
-
-  THEMES = {
-    forest: { id:'forest', name:'Deep Forest',  bg:'#0A1612', surface:'#111E17', card:'#162A1E', border:'#1F3828', accent:'#22C55E', accentText:'#4ADE80', accentAlpha:'rgba(34,197,94,0.1)',  text:'#F0FDF4', textSec:'#86EFAC', textMuted:'#4B7A5E', positive:'#22C55E', negative:'#F87171', warn:'#FCD34D', negBg:'rgba(248,113,113,0.1)', posBg:'rgba(34,197,94,0.1)',  warnBg:'rgba(252,211,77,0.08)', warnBorder:'rgba(252,211,77,0.25)' },
-    teal:   { id:'teal',   name:'Midnight Teal', bg:'#060F12', surface:'#0C1E24', card:'#102230', border:'#1A3440', accent:'#14B8A6', accentText:'#5EEAD4', accentAlpha:'rgba(20,184,166,0.1)',  text:'#F0FDFA', textSec:'#99F6E4', textMuted:'#3A6B66', positive:'#34D399', negative:'#F87171', warn:'#FCD34D', negBg:'rgba(248,113,113,0.1)', posBg:'rgba(52,211,153,0.1)', warnBg:'rgba(252,211,77,0.08)', warnBorder:'rgba(252,211,77,0.25)' },
-    lime:   { id:'lime',   name:'Obsidian Lime', bg:'#0D0D0D', surface:'#151515', card:'#1C1C1C', border:'#282828', accent:'#A3E635', accentText:'#BEF264', accentAlpha:'rgba(163,230,53,0.1)',  text:'#FAFAFA', textSec:'#D9F99D', textMuted:'#525252', positive:'#A3E635', negative:'#F87171', warn:'#FCD34D', negBg:'rgba(248,113,113,0.1)', posBg:'rgba(163,230,53,0.1)', warnBg:'rgba(252,211,77,0.08)', warnBorder:'rgba(252,211,77,0.25)' },
-  };
-
-  MONTHS_FULL = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
-  MONTHS_S    = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-  CARD_GRADS  = ['linear-gradient(140deg,#1a0a2e 0%,#0d1a62 60%,#0a2840 100%)','linear-gradient(140deg,#1a2808 0%,#0a2040 60%,#071830 100%)'];
-
-  DATA = {
-    creditCards: [
-      { id:'c1', name:'KTC',      limit:50000, debt:18500, cutday:5,  dueday:25 },
-      { id:'c2', name:'SCB Visa', limit:30000, debt:7200,  cutday:15, dueday:8  },
-    ],
-    loans: [
-      { id:'l1', name:'สินเชื่อรถ Honda', debt:285000, original:340000, monthly:7500, dueday:10, type:'car'    },
-      { id:'l2', name:'iPhone 15 Pro',    debt:23800,  original:47600,  monthly:3967, dueday:15, type:'device' },
-    ],
-    transactions: [
-      { id:'t1', type:'income',  amount:52000, name:'เงินเดือน',        date:'2026-06-30', category:'เงินเดือน' },
-      { id:'t2', type:'expense', amount:350,   name:'กาแฟ True Coffee', date:'2026-06-21', category:'อาหาร/เครื่องดื่ม' },
-      { id:'t3', type:'expense', amount:1200,  name:'ค่าน้ำมัน',        date:'2026-06-21', category:'เดินทาง' },
-      { id:'t4', type:'expense', amount:299,   name:'Netflix',           date:'2026-06-20', category:'บันเทิง' },
-      { id:'t5', type:'expense', amount:4500,  name:'ค่าเช่าบ้าน',      date:'2026-06-19', category:'ที่พัก' },
-      { id:'t6', type:'income',  amount:3000,  name:'รายได้พิเศษ',      date:'2026-06-18', category:'รายได้อื่น' },
-      { id:'t7', type:'expense', amount:890,   name:'ซูเปอร์มาร์เก็ต', date:'2026-06-18', category:'อาหาร/เครื่องดื่ม' },
-    ],
-    monthlyExpenses: [
-      { id:'m1', name:'Netflix',      amount:299, dueday:20, category:'บันเทิง',     paid:true  },
-      { id:'m2', name:'True Move H',  amount:599, dueday:25, category:'โทรศัพท์',    paid:false },
-      { id:'m3', name:'ค่าน้ำ',       amount:180, dueday:15, category:'สาธารณูปโภค', paid:true  },
-      { id:'m4', name:'ค่าไฟ',        amount:850, dueday:15, category:'สาธารณูปโภค', paid:false },
-      { id:'m5', name:'ค่า Internet', amount:590, dueday:5,  category:'โทรศัพท์',    paid:true  },
-    ],
-  };
-
-  CAT = {
-    'เงินเดือน':          { icon:'payments',       color:'#22C55E', bg:'rgba(34,197,94,0.12)'   },
-    'อาหาร/เครื่องดื่ม': { icon:'restaurant',     color:'#FB923C', bg:'rgba(251,146,60,0.12)'  },
-    'เดินทาง':            { icon:'directions_car', color:'#60A5FA', bg:'rgba(96,165,250,0.12)'  },
-    'บันเทิง':            { icon:'movie',          color:'#A78BFA', bg:'rgba(167,139,250,0.12)' },
-    'ที่พัก':             { icon:'home',           color:'#F9A8D4', bg:'rgba(249,168,212,0.12)' },
-    'รายได้อื่น':         { icon:'savings',        color:'#34D399', bg:'rgba(52,211,153,0.12)'  },
-    'โทรศัพท์':           { icon:'smartphone',     color:'#94A3B8', bg:'rgba(148,163,184,0.12)' },
-    'สาธารณูปโภค':        { icon:'bolt',           color:'#FDE047', bg:'rgba(253,224,71,0.12)'  },
-  };
-
-  fmt(n)  { return n.toLocaleString('th-TH', { minimumFractionDigits:2, maximumFractionDigits:2 }); }
-  fmtD(s) { const [,m,d]=s.split('-').map(Number); return d+' '+this.MONTHS_S[m-1]; }
-
-  makeTx(tx, t) {
-    const c = this.CAT[tx.category] || { icon:'payments', color:'#94A3B8', bg:'rgba(148,163,184,0.12)' };
-    return {
-      ...tx, icon: c.icon,
-      ibg: { width:'40px', height:'40px', borderRadius:'12px', background:c.bg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 },
-      ico: { fontSize:'20px', color:c.color, fontVariationSettings:"'FILL' 1" },
-      amtFmt:   (tx.type==='income'?'+฿':'-฿') + this.fmt(tx.amount),
-      amtStyle: { fontSize:'14px', fontWeight:'700', color: tx.type==='income' ? t.positive : t.negative },
-      dateFmt:  this.fmtD(tx.date),
-    };
-  }
-
-  renderVals() {
-    const t = this.THEMES[this.state.theme];
-    const { tab, month, year } = this.state;
-    const { creditCards, loans, transactions, monthlyExpenses } = this.DATA;
-
-    const totalIn  = transactions.filter(x=>x.type==='income').reduce((s,x)=>s+x.amount,0);
-    const totalOut = transactions.filter(x=>x.type==='expense').reduce((s,x)=>s+x.amount,0);
-    const balance  = totalIn - totalOut;
-    const mk  = year+'-'+String(month+1).padStart(2,'0');
-    const mTx = transactions.filter(x=>x.date.startsWith(mk));
-    const mIn = mTx.filter(x=>x.type==='income').reduce((s,x)=>s+x.amount,0);
-    const mOut= mTx.filter(x=>x.type==='expense').reduce((s,x)=>s+x.amount,0);
-    const unpaid = monthlyExpenses.filter(m=>!m.paid);
-    const paid   = monthlyExpenses.filter(m=>m.paid);
-
-    // ── All theme-reactive styles built fresh every render ──
-    const S = {
-      page:      { minHeight:'100vh', background:t.bg, display:'flex', flexDirection:'column', alignItems:'center', padding:'36px 20px 56px', gap:'22px' },
-      phone:     { width:'390px', maxWidth:'calc(100vw - 40px)', background:t.bg, borderRadius:'52px', overflow:'hidden', boxShadow:'0 48px 120px rgba(0,0,0,0.85), inset 0 0 0 1px rgba(255,255,255,0.07)', display:'flex', flexDirection:'column', position:'relative' },
-      statusBar: { height:'50px', padding:'16px 28px 0', display:'flex', justifyContent:'space-between', alignItems:'center', background:t.bg, flexShrink:0, position:'relative', zIndex:2 },
-      tabBar:    { height:'78px', background:t.surface, borderTop:`1px solid ${t.border}`, display:'flex', alignItems:'flex-start', paddingTop:'8px', flexShrink:0 },
-      themeRow:  { display:'flex', gap:'10px', alignItems:'center', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:'50px', padding:'10px 18px' },
-      appTitle:  { fontSize:'22px', fontWeight:'800', color:t.text, letterSpacing:'-0.5px' },
-      appSub:    { fontSize:'11px', color:t.textMuted, fontWeight:'600', letterSpacing:'1.5px', textTransform:'uppercase' },
-      themeLabel:{ fontSize:'11px', fontWeight:'700', color:t.textMuted, letterSpacing:'0.5px', marginRight:'4px' },
-      statusTime:{ fontSize:'15px', fontWeight:'700', color:t.text },
-      statusIcons:{ fontSize:'12px', color:t.text, opacity:'0.8' },
-      pgTitle:   { fontSize:'22px', fontWeight:'800', color:t.text },
-      secTitle:  { fontSize:'12px', fontWeight:'800', color:t.text, textTransform:'uppercase', letterSpacing:'0.8px' },
-      secLbl:    { fontSize:'11px', fontWeight:'700', color:t.textMuted, textTransform:'uppercase', letterSpacing:'0.8px', marginBottom:'10px' },
-      seeAll:    { fontSize:'12px', fontWeight:'600', color:t.accent },
-      txName:    { fontSize:'14px', fontWeight:'500', color:t.text, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' },
-      txSub:     { fontSize:'11px', color:t.textMuted, marginTop:'2px' },
-      txRow:     { padding:'12px 24px', display:'flex', alignItems:'center', gap:'12px', borderBottom:`1px solid ${t.border}` },
-      txRow1:    { padding:'13px 24px', display:'flex', alignItems:'center', gap:'12px', borderBottom:`1px solid ${t.border}` },
-      moreBtn:   { width:'28px', height:'28px', borderRadius:'8px', background:'transparent', border:`1px solid ${t.border}`, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' },
-      moreIco:   { fontSize:'14px', color:t.textMuted },
-      balLbl:    { fontSize:'11px', fontWeight:'700', color:t.textMuted, textTransform:'uppercase', letterSpacing:'1px' },
-      dateLbl:   { fontSize:'12px', color:t.textMuted, marginTop:'5px' },
-      monthNav:  { display:'flex', alignItems:'center', gap:'6px', background:t.card, border:`1px solid ${t.border}`, borderRadius:'12px', padding:'8px 11px', marginTop:'4px' },
-      mnBtn:     { background:'transparent', border:'none', color:t.textMuted, cursor:'pointer', fontSize:'18px', lineHeight:'1', padding:'0', fontWeight:'300' },
-      mnTxt:     { fontSize:'11px', fontWeight:'700', color:t.accentText, whiteSpace:'nowrap' },
-      incPill:   { flex:1, background:t.posBg, border:`1px solid ${t.accent}33`, borderRadius:'16px', padding:'14px 16px' },
-      expPill:   { flex:1, background:t.negBg, border:'1px solid rgba(248,113,113,0.22)', borderRadius:'16px', padding:'14px 16px' },
-      incLbl:    { fontSize:'11px', fontWeight:'700', color:t.positive, textTransform:'uppercase', letterSpacing:'0.5px', opacity:'0.8', marginBottom:'4px' },
-      incAmt:    { fontSize:'18px', fontWeight:'800', color:t.positive },
-      expLbl:    { fontSize:'11px', fontWeight:'700', color:t.negative, textTransform:'uppercase', letterSpacing:'0.5px', opacity:'0.8', marginBottom:'4px' },
-      expAmt:    { fontSize:'18px', fontWeight:'800', color:t.negative },
-      alertBox:  { margin:'0 24px 18px', background:t.warnBg, border:`1px solid ${t.warnBorder}`, borderRadius:'14px', padding:'12px 14px', display:'flex', alignItems:'center', gap:'12px' },
-      alertIcon: { width:'36px', height:'36px', background:'rgba(252,211,77,0.15)', borderRadius:'10px', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 },
-      alertIconGlyph:{ fontSize:'20px', color:t.warn },
-      alertTitle:{ fontSize:'13px', fontWeight:'700', color:t.warn },
-      alertSub:  { fontSize:'11px', color:'rgba(252,211,77,0.5)', marginTop:'2px' },
-      negBadge:  { fontSize:'11px', fontWeight:'700', background:t.negative, color:'#fff', borderRadius:'20px', padding:'3px 10px' },
-      negAmt:    { fontSize:'15px', fontWeight:'700', color:t.negative },
-      negAmtLg:  { fontSize:'15px', fontWeight:'800', color:t.negative },
-      accentTxt: { fontSize:'11px', color:t.accentText },
-      warnTxt:   { fontSize:'15px', fontWeight:'700', color:t.warn },
-      vDivider:  { width:'1px', background:t.border },
-      unpaidWrap:{ margin:'18px 24px 0', background:t.card, border:`1px solid ${t.border}`, borderRadius:'16px', overflow:'hidden' },
-      unpaidHdr: { padding:'13px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:`1px solid ${t.border}` },
-      unpaidRow: { padding:'12px 18px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:`1px solid ${t.border}` },
-      unpaidFoot:{ padding:'12px 18px', display:'flex', justifyContent:'space-between' },
-      dgHdr:     { padding:'6px 24px 8px', fontSize:'11px', fontWeight:'700', color:t.textMuted, textTransform:'uppercase', letterSpacing:'0.8px' },
-      addGreen:  { width:'38px', height:'38px', background:t.accent, border:'none', borderRadius:'11px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' },
-      addGreenIco:{ fontSize:'22px', color:'#000' },
-      addGray:   { width:'38px', height:'38px', background:t.card, border:`1px solid ${t.border}`, borderRadius:'11px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' },
-      addGrayIco:{ fontSize:'20px', color:t.textMuted },
-      recBtn:    { width:'100%', background:t.accent, border:'none', borderRadius:'14px', padding:'14px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' },
-      recBtnIco: { fontSize:'20px', color:t.bg },
-      recBtnTxt: { fontSize:'14px', fontWeight:'700', color:t.bg, fontFamily:"'Sarabun',sans-serif" },
-      cardDetail:{ background:t.card, border:`1px solid ${t.border}`, borderTop:'none', borderRadius:'0 0 18px 18px', padding:'16px 18px' },
-      barTrack:  { height:'5px', background:t.border, borderRadius:'3px', overflow:'hidden', marginBottom:'6px' },
-      histBtn:   { padding:'9px 14px', background:'transparent', border:`1px solid ${t.border}`, borderRadius:'10px', cursor:'pointer', display:'flex', alignItems:'center', gap:'6px' },
-      histIco:   { fontSize:'15px', color:t.textMuted },
-      histTxt:   { fontSize:'12px', fontWeight:'600', color:t.textMuted, fontFamily:"'Sarabun',sans-serif" },
-      loanCard:  { margin:'10px 24px 0', background:t.card, border:`1px solid ${t.border}`, borderRadius:'20px', padding:'20px' },
-      loanBarTrack:{ height:'5px', background:t.border, borderRadius:'3px', overflow:'hidden', marginBottom:'6px' },
-      loanDebt:  { fontSize:'24px', fontWeight:'800', color:t.text, letterSpacing:'-0.5px' },
-      loanMonthly:{ fontSize:'18px', fontWeight:'700', color:t.accentText },
-      paidLbl:   { fontSize:'11px', color:t.textMuted, marginBottom:'14px' },
-      fieldLbl:  { fontSize:'10px', color:t.textMuted, textTransform:'uppercase', letterSpacing:'0.5px', marginBottom:'3px' },
-      mSummary:  { margin:'12px 24px 16px', background:t.card, border:`1px solid ${t.border}`, borderRadius:'16px', padding:'16px 18px' },
-      mBarTrack: { height:'6px', width:'140px', background:t.border, borderRadius:'3px', overflow:'hidden', marginTop:'5px' },
-      mTotalAmt: { fontSize:'20px', fontWeight:'800', color:t.text },
-      mFooter:   { margin:'16px 24px 0', background:t.card, border:`1px solid ${t.border}`, borderRadius:'12px', padding:'14px 18px', display:'flex', justifyContent:'space-between' },
-      mFooterAmt:{ fontSize:'16px', fontWeight:'800', color:t.positive },
-      sCard:     { background:t.card, border:`1px solid ${t.border}`, borderRadius:'16px', overflow:'hidden' },
-      sRowB:     { padding:'14px 16px', borderBottom:`1px solid ${t.border}`, display:'flex', alignItems:'center' },
-      sRowL:     { padding:'14px 16px' },
-      statusDot: { width:'8px', height:'8px', borderRadius:'50%', background:t.positive, flexShrink:0, marginRight:'10px', display:'inline-block' },
-      connTxt:   { fontSize:'13px', fontWeight:'500', color:t.textSec },
-      fldLbl:    { fontSize:'10px', color:t.textMuted, letterSpacing:'0.5px', marginBottom:'4px' },
-      fldVal:    { fontSize:'12px', color:t.text, fontFamily:'monospace', opacity:'0.7' },
-      ioBtn:     { flex:1, background:t.card, border:`1px solid ${t.border}`, borderRadius:'14px', padding:'16px', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:'8px' },
-      expIco:    { fontSize:'26px', color:t.accent },
-      impIco:    { fontSize:'26px', color:t.accentText },
-      ioBtnTxt:  { fontSize:'12px', fontWeight:'600', color:t.text, fontFamily:"'Sarabun',sans-serif" },
-      pinRow:    { padding:'16px', display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:`1px solid ${t.border}` },
-      pinIco:    { fontSize:'20px', color:t.accent },
-      pinToggle: { width:'46px', height:'26px', background:t.accent, borderRadius:'13px', position:'relative', cursor:'pointer' },
-      pinChangeTxt:{ fontSize:'14px', fontWeight:'600', color:t.accent },
-      infoTitle: { fontSize:'18px', fontWeight:'800', color:t.text, marginBottom:'5px' },
-      infoUrl:   { fontSize:'11px', color:t.textMuted, opacity:'0.5', marginTop:'3px' },
-    };
-
-    // Tabs
-    const TDEFS = [
-      {icon:'home',label:'ภาพรวม'},{icon:'receipt_long',label:'รายการ'},
-      {icon:'credit_card',label:'บัตร'},{icon:'account_balance',label:'สินเชื่อ'},
-      {icon:'calendar_month',label:'รายเดือน'},{icon:'settings',label:'ตั้งค่า'},
-    ];
-    const tabs = TDEFS.map((d,i) => ({
-      ...d,
-      onTap:      ()=>this.setState({tab:i}),
-      btnStyle:   { flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'2px', border:'none', background:'transparent', cursor:'pointer', padding:'8px 0 0' },
-      iconStyle:  { fontSize:'22px', color:i===tab?t.accent:t.textMuted, fontVariationSettings:"'FILL' 1", transition:'color 0.15s' },
-      labelStyle: { fontSize:'10px', fontWeight:i===tab?'700':'400', color:i===tab?t.accent:t.textMuted, fontFamily:"'Sarabun',sans-serif", lineHeight:'1.4', transition:'color 0.15s' },
-    }));
-
-    // Theme swatches
-    const themes = Object.values(this.THEMES).map(th => ({
-      id:th.id, name:th.name,
-      onSet: ()=>this.setState({theme:th.id}),
-      swatchStyle: { width:'26px', height:'26px', borderRadius:'50%', background:th.accent, border:th.id===this.state.theme?'3px solid #fff':'3px solid transparent', cursor:'pointer', outline:'none', boxShadow:th.id===this.state.theme?`0 0 0 2px ${th.accent}`:'none', transition:'all 0.2s', display:'block' },
-    }));
-
-    // Transactions
-    const recentTx = transactions.slice(0,5).map(tx=>this.makeTx(tx,t));
-    const allTx    = transactions.map(tx=>this.makeTx(tx,t));
-
-    // Filter pills
-    const filterOn  = { padding:'7px 16px', background:t.accent, border:'none', borderRadius:'20px', fontSize:'12px', fontWeight:'700', color:t.bg, cursor:'pointer' };
-    const filterOff = { padding:'7px 16px', background:t.card, border:`1px solid ${t.border}`, borderRadius:'20px', fontSize:'12px', fontWeight:'500', color:t.textMuted, cursor:'pointer' };
-
-    // Credit cards
-    const cardsView = creditCards.map((c,i)=>{
-      const pct = c.debt/c.limit;
-      const bc  = pct<0.5?t.positive:pct<0.8?t.warn:t.negative;
-      return {
-        ...c,
-        debtDisplay:  '฿'+this.fmt(c.debt),
-        limitDisplay: '฿'+this.fmt(c.limit),
-        availDisplay: 'คงเหลือ ฿'+this.fmt(c.limit-c.debt),
-        pctLabel:     Math.round(pct*100)+'% ของวงเงิน',
-        barStyle:  { width:Math.round(pct*100)+'%', height:'5px', borderRadius:'3px', background:bc, transition:'width 0.4s ease' },
-        cardStyle: { borderRadius:'18px', padding:'20px', position:'relative', overflow:'hidden', aspectRatio:'1.72', display:'flex', flexDirection:'column', justifyContent:'space-between', background:this.CARD_GRADS[i%this.CARD_GRADS.length] },
-      };
-    });
-
-    // Loans
-    const loansView = loans.map(l=>{
-      const pct = 1-(l.debt/l.original);
-      return {
-        ...l,
-        debtDisplay:   '฿'+this.fmt(l.debt),
-        monthlyDisplay:'฿'+this.fmt(l.monthly),
-        paidLabel:     'จ่ายไปแล้ว '+Math.round(pct*100)+'%',
-        progressStyle: { width:Math.round(pct*100)+'%', height:'5px', borderRadius:'3px', background:t.positive },
-        typeIcon:      l.type==='car'?'directions_car':'smartphone',
-        ibg: { width:'44px', height:'44px', background:t.accentAlpha, borderRadius:'12px', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 },
-        ico: { fontSize:'22px', color:t.accent, fontVariationSettings:"'FILL' 1" },
-        payBtn:  { width:'100%', background:t.accentAlpha, border:`1px solid ${t.accent}44`, borderRadius:'12px', padding:'12px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' },
-        payIco:  { fontSize:'18px', color:t.accent, fontVariationSettings:"'FILL' 1" },
-        payTxt:  { fontSize:'13px', fontWeight:'600', color:t.accent, fontFamily:"'Sarabun',sans-serif" },
-      };
-    });
-
-    // Monthly
-    const totalMonthlyAmt = monthlyExpenses.reduce((s,m)=>s+m.amount,0);
-    const paidAmt         = paid.reduce((s,m)=>s+m.amount,0);
-    const monthlyData = monthlyExpenses.map(m=>({
-      ...m,
-      amtFmt: '฿'+this.fmt(m.amount),
-      checkStyle:     { width:'22px', height:'22px', borderRadius:'7px', border:m.paid?'none':`2px solid ${t.border}`, background:m.paid?t.accent:'transparent', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', flexShrink:0 },
-      checkMarkStyle: { fontSize:'13px', fontWeight:'800', color:m.paid?t.bg:'transparent', lineHeight:'1' },
-      rowStyle:       { padding:'14px 24px', display:'flex', alignItems:'center', gap:'14px', borderBottom:`1px solid ${t.border}`, opacity:m.paid?'0.55':'1' },
-    }));
-    const mProgressStyle = { width:Math.round((paidAmt/Math.max(1,totalMonthlyAmt))*100)+'%', height:'6px', background:t.positive, borderRadius:'3px', transition:'width 0.5s ease' };
-
-    return {
-      S, tabs, themes,
-      isTab0:tab===0, isTab1:tab===1, isTab2:tab===2, isTab3:tab===3, isTab4:tab===4, isTab5:tab===5,
-      // Overview
-      balDisplay: '฿'+this.fmt(balance),
-      balStyle:   { fontSize:'34px', fontWeight:'800', color:balance>=0?t.text:t.negative, lineHeight:'1.1', marginTop:'4px', letterSpacing:'-1px', fontFamily:"'Sarabun',sans-serif" },
-      monthLabel: this.MONTHS_FULL[month]+' '+(year+543),
-      prevMonth:  ()=>this.setState(s=>({ month:s.month===0?11:s.month-1, year:s.month===0?s.year-1:s.year })),
-      nextMonth:  ()=>this.setState(s=>({ month:s.month===11?0:s.month+1, year:s.month===11?s.year+1:s.year })),
-      mIncome:  '+฿'+this.fmt(mIn),
-      mExpense: '-฿'+this.fmt(mOut),
-      recentTx, allTx,
-      unpaidList:     unpaid.map(m=>({...m, amtFmt:'฿'+this.fmt(m.amount)})),
-      hasUnpaid:      unpaid.length>0,
-      unpaidCountTxt: unpaid.length+' รายการ',
-      unpaidTotal:    '฿'+this.fmt(unpaid.reduce((s,m)=>s+m.amount,0)),
-      // Tab 1
-      filterOn, filterOff,
-      // Tab 2
-      cardsView,
-      // Tab 3
-      loansView,
-      // Tab 4
-      monthlyData, mProgressStyle,
-      paidCountTxt: paid.length+'/'+monthlyExpenses.length,
-      totalMonthly: '฿'+this.fmt(totalMonthlyAmt),
-      paidTotal:    '฿'+this.fmt(paidAmt),
-    };
+<script>
+const PIN = '190290';
+let pinInput = '';
+function pinPress(d) {
+  if (pinInput.length >= 6) return;
+  pinInput += d;
+  document.getElementById('dot-'+(pinInput.length-1)).style.background = '#2d6a4f';
+  document.getElementById('dot-'+(pinInput.length-1)).style.borderColor = '#2d6a4f';
+  if (pinInput.length === 6) {
+    setTimeout(() => {
+      if (pinInput === PIN) {
+        sessionStorage.setItem('pin_ok','1');
+        document.getElementById('pin-overlay').style.display = 'none';
+      } else {
+        document.getElementById('pin-error').textContent = 'PIN ไม่ถูกต้อง ลองใหม่อีกครั้ง';
+        pinInput = '';
+        for (let i=0;i<6;i++) {
+          document.getElementById('dot-'+i).style.background = '#fff';
+          document.getElementById('dot-'+i).style.borderColor = '#ccc';
+        }
+      }
+    }, 200);
   }
 }
+function pinDel() {
+  if (!pinInput.length) return;
+  pinInput = pinInput.slice(0,-1);
+  document.getElementById('dot-'+pinInput.length).style.background = '#fff';
+  document.getElementById('dot-'+pinInput.length).style.borderColor = '#ccc';
+  document.getElementById('pin-error').textContent = '';
+}
+if (sessionStorage.getItem('pin_ok') === '1') {
+  document.getElementById('pin-overlay').style.display = 'none';
+}
+</script>
+<div class="app">
+  <div class="header">
+    <h1>💰 บัญชีรายรับ-รายจ่าย</h1>
+    <div class="month-nav">
+      <button onclick="changeMonth(-1)">◀</button>
+      <span id="currentMonthLabel"></span>
+      <button onclick="changeMonth(1)">▶</button>
+    </div>
+    <div class="sync-status" id="syncStatus">⬤ ยังไม่ได้เชื่อมต่อ</div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('overview')">📊 ภาพรวม</div>
+    <div class="tab" onclick="showTab('transactions')">📝 รายการ</div>
+    <div class="tab" onclick="showTab('credit')">💳 บัตรเครดิต/บัตรกดเงินสด</div>
+    <div class="tab" onclick="showTab('loans')">💸 ผ่อน/สินเชื่อ</div>
+    <div class="tab" onclick="showTab('monthly')">📅 รายเดือน</div>
+    <div class="tab" onclick="showTab('settings')">⚙️ ตั้งค่า</div>
+  </div>
+
+  <!-- Overview -->
+  <div id="page-overview" class="page active section">
+    <div class="summary-grid">
+      <div class="summary-card income"><div class="label">รายรับเดือนนี้</div><div class="amount" id="s-income">฿0</div></div>
+      <div class="summary-card expense"><div class="label">รายจ่ายเดือนนี้</div><div class="amount" id="s-expense">฿0</div></div>
+      <div class="summary-card balance"><div class="label">คงเหลือสะสม</div><div class="amount" id="s-balance">฿0</div><div style="font-size:12px;color:#888;margin-top:2px">เดือนนี้: <span id="s-balance-month">฿0</span></div></div>
+      <div class="summary-card debt"><div class="label">หนี้บัตร+ผ่อนรวม</div><div class="amount" id="s-debt">฿0</div></div>
+    </div>
+    <div id="cc-due-alert"></div>
+    <div class="list-card"><h3>รายการล่าสุด</h3><div id="recent-list"><div class="empty">ยังไม่มีรายการ</div></div></div>
+    <div class="list-card"><h3>รายจ่ายรายเดือนที่ยังไม่ได้จ่าย</h3><div id="unpaid-monthly"><div class="empty">ไม่มีรายการค้างชำระ</div></div></div>
+  </div>
+
+  <!-- Transactions -->
+  <div id="page-transactions" class="page section">
+    <div class="form-card">
+      <h3>เพิ่มรายการ</h3>
+      <div class="chip-row" id="type-chips">
+        <span class="chip selected" data-type="income" onclick="selectType('income')">+ รายรับ</span>
+        <span class="chip" data-type="expense" onclick="selectType('expense')">− รายจ่าย</span>
+      </div>
+      <div class="form-row"><input type="text" id="tx-name" placeholder="รายการ เช่น เงินเดือน, ค่าอาหาร"></div>
+      <div class="form-row">
+        <input type="number" id="tx-amount" placeholder="จำนวนเงิน (บาท)" inputmode="decimal">
+        <input type="date" id="tx-date">
+      </div>
+      <div class="form-row">
+        <select id="tx-category">
+          <option value="">-- หมวดหมู่ --</option>
+          <optgroup label="รายรับ"><option>เงินเดือน</option><option>โบนัส</option><option>รายได้เสริม</option><option>ดอกเบี้ย</option><option>อื่นๆ (รายรับ)</option></optgroup>
+          <optgroup label="รายจ่าย"><option>อาหาร</option><option>เดินทาง</option><option>ช้อปปิ้ง</option><option>สุขภาพ</option><option>บันเทิง</option><option>ค่าน้ำค่าไฟ</option><option>อื่นๆ (รายจ่าย)</option></optgroup>
+        </select>
+        <input type="text" id="tx-note" placeholder="หมายเหตุ">
+      </div>
+      <button class="btn btn-primary" onclick="addTransaction()" style="width:100%">+ บันทึก</button>
+    </div>
+    <div class="list-card"><h3>รายการทั้งหมดเดือนนี้</h3><div id="tx-list"><div class="empty">ยังไม่มีรายการ</div></div></div>
+  </div>
+
+  <!-- Credit Cards -->
+  <div id="page-credit" class="page section">
+    <div class="form-card">
+      <h3>เพิ่มบัตรเครดิต</h3>
+      <div class="form-row">
+        <input type="text" id="cc-name" placeholder="ชื่อบัตร เช่น KBank Platinum">
+        <input type="number" id="cc-limit" placeholder="วงเงิน (บาท)" inputmode="decimal">
+      </div>
+      <div class="form-row">
+        <input type="number" id="cc-debt-input" placeholder="หนี้คงค้าง (บาท)" inputmode="decimal">
+        <input type="number" id="cc-cutday" placeholder="วันสรุปยอด (เช่น 25)" min="1" max="31" inputmode="numeric">
+      </div>
+      <div class="form-row">
+        <input type="number" id="cc-dueday" placeholder="วันครบกำหนดชำระ (เช่น 15)" min="1" max="31" inputmode="numeric">
+      </div>
+      <div class="form-row" id="cc-group-row" style="align-items:center;gap:10px">
+        <label style="font-size:13px;color:#555;white-space:nowrap">วงเงินร่วมกับ:</label>
+        <select id="cc-group-select" style="flex:1">
+          <option value="">ไม่มี (วงเงินของตัวเอง)</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="addCreditCard()">+ เพิ่มบัตร</button>
+    </div>
+    <div style="padding:0 4px 12px">
+      <button class="btn btn-primary" onclick="openCCPayment(null)" style="width:100%">+ บันทึกรายการ</button>
+    </div>
+    <div class="form-card" id="cc-payment-form" style="display:none">
+      <h3>บันทึกการชำระ / รายการใช้จ่าย</h3>
+      <div class="chip-row" id="cc-action-chips">
+        <span class="chip selected" data-action="payment" onclick="selectCCAction('payment')">ชำระหนี้</span>
+        <span class="chip" data-action="charge" onclick="selectCCAction('charge')">ใช้จ่ายบัตร</span>
+      </div>
+      <div class="form-row">
+        <select id="cc-select-card"></select>
+        <input type="number" id="cc-pay-amount" placeholder="จำนวนเงิน" inputmode="decimal">
+      </div>
+      <div class="form-row">
+        <input type="date" id="cc-pay-date">
+        <input type="text" id="cc-pay-note" placeholder="หมายเหตุ">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveCCTransaction()">บันทึก</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('cc-payment-form').style.display='none'">ยกเลิก</button>
+      </div>
+    </div>
+    <div id="cc-list"></div>
+  </div>
+
+  <!-- Loans -->
+  <div id="page-loans" class="page section">
+    <div class="form-card">
+      <h3>เพิ่มสินเชื่อ/ผ่อนชำระ</h3>
+      <div class="form-row">
+        <input type="text" id="ln-name" placeholder="ชื่อ เช่น SpayLater, กดเงินสด">
+        <input type="number" id="ln-debt" placeholder="หนี้คงเหลือ (บาท)" inputmode="decimal">
+      </div>
+      <div class="form-row">
+        <input type="number" id="ln-monthly" placeholder="ผ่อนต่อเดือน (บาท)" inputmode="decimal">
+        <input type="number" id="ln-dueday" placeholder="วันครบกำหนด" min="1" max="31" inputmode="numeric">
+      </div>
+      <div class="form-row">
+        <select id="ln-type">
+          <option value="bnpl">BNPL (Buy Now Pay Later)</option>
+          <option value="cash">กดเงินสด/สินเชื่อ</option>
+          <option value="installment">ผ่อนสินค้า</option>
+          <option value="other">อื่นๆ</option>
+        </select>
+        <input type="text" id="ln-note" placeholder="หมายเหตุ">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="addLoan()">+ เพิ่มรายการ</button>
+    </div>
+    <div id="loan-list"></div>
+    <div class="form-card" id="loan-payment-form" style="display:none">
+      <h3>บันทึกการชำระ</h3>
+      <div class="form-row">
+        <select id="ln-select"></select>
+        <input type="number" id="ln-pay-amount" placeholder="จำนวนเงิน" inputmode="decimal">
+      </div>
+      <div class="form-row">
+        <input type="date" id="ln-pay-date">
+        <input type="text" id="ln-pay-note" placeholder="หมายเหตุ">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveLoanPayment()">บันทึก</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('loan-payment-form').style.display='none'">ยกเลิก</button>
+      </div>
+    </div>
+    <div class="list-card" id="loan-history-card" style="display:none">
+      <h3>ประวัติการชำระ</h3>
+      <div id="loan-history-list"></div>
+    </div>
+  </div>
+
+  <!-- Monthly -->
+  <div id="page-monthly" class="page section">
+    <div class="form-card">
+      <h3>เพิ่มรายจ่ายประจำเดือน</h3>
+      <div class="form-row">
+        <input type="text" id="mo-name" placeholder="รายการ เช่น ค่าเช่า, Netflix">
+        <input type="number" id="mo-amount" placeholder="จำนวนเงิน" inputmode="decimal">
+      </div>
+      <div class="form-row">
+        <input type="number" id="mo-dueday" placeholder="วันที่ต้องจ่าย" min="1" max="31" inputmode="numeric">
+        <select id="mo-category">
+          <option value="">-- หมวดหมู่ --</option>
+          <option>ที่อยู่อาศัย</option><option>สาธารณูปโภค</option><option>สื่อ/บันเทิง</option>
+          <option>ประกัน</option><option>การศึกษา</option><option>อื่นๆ</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="addMonthlyExpense()">+ เพิ่มรายการ</button>
+    </div>
+    <div class="list-card"><h3>รายจ่ายประจำเดือนนี้</h3><div id="monthly-list"><div class="empty">ยังไม่มีรายการ</div></div></div>
+  </div>
+
+  <!-- Settings -->
+  <div id="page-settings" class="page section">
+    <div class="setup-box">
+      <h3>🔥 การเชื่อมต่อ Firebase</h3>
+      <div class="form-row"><textarea id="fb-config-input" style="min-height:120px;font-size:12px;font-family:monospace" placeholder="วาง firebaseConfig ที่นี่"></textarea></div>
+      <button class="btn btn-primary btn-sm" onclick="saveFirebaseConfig()">เชื่อมต่อ</button>
+    </div>
+    <div class="form-card" id="fb-status-card" style="display:none">
+      <h3>สถานะ Firebase</h3>
+      <p id="fb-status-text" style="font-size:14px;color:#555;margin-bottom:12px"></p>
+      <button class="btn btn-danger" onclick="disconnectFirebase()">ยกเลิกการเชื่อมต่อ</button>
+    </div>
+    <div class="form-card">
+      <h3>ข้อมูลสำรอง</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="exportData()">📥 Export JSON</button>
+        <label class="btn btn-outline btn-sm" style="cursor:pointer">📤 Import JSON<input type="file" accept=".json" onchange="importData(event)" style="display:none"></label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Loan Modal -->
+<div class="modal-overlay hidden" id="modal-ln">
+  <div class="modal">
+    <h3>แก้ไขสินเชื่อ/ผ่อนชำระ</h3>
+    <div class="form-row"><input type="text" id="edit-ln-name" placeholder="ชื่อ"></div>
+    <div class="form-row">
+      <input type="number" id="edit-ln-debt" placeholder="หนี้คงเหลือ (บาท)" inputmode="decimal">
+      <input type="number" id="edit-ln-monthly" placeholder="ผ่อนต่อเดือน (บาท)" inputmode="decimal">
+    </div>
+    <div class="form-row">
+      <input type="number" id="edit-ln-dueday" placeholder="วันครบกำหนด" min="1" max="31" inputmode="numeric">
+      <select id="edit-ln-type">
+        <option value="bnpl">BNPL</option>
+        <option value="cash">กดเงินสด/สินเชื่อ</option>
+        <option value="installment">ผ่อนสินค้า</option>
+        <option value="other">อื่นๆ</option>
+      </select>
+    </div>
+    <div class="form-row"><input type="text" id="edit-ln-note" placeholder="หมายเหตุ"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary btn-sm" onclick="saveEditLoan()">บันทึก</button>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-ln')">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Transaction Modal -->
+<div class="modal-overlay hidden" id="modal-tx">
+  <div class="modal">
+    <h3>แก้ไขรายการ</h3>
+    <div class="chip-row" id="edit-type-chips">
+      <span class="chip selected" data-type="income" onclick="editSelectType('income')">+ รายรับ</span>
+      <span class="chip" data-type="expense" onclick="editSelectType('expense')">− รายจ่าย</span>
+    </div>
+    <div class="form-row"><input type="text" id="edit-tx-name" placeholder="รายการ"></div>
+    <div class="form-row">
+      <input type="number" id="edit-tx-amount" placeholder="จำนวนเงิน" inputmode="decimal">
+      <input type="date" id="edit-tx-date">
+    </div>
+    <div class="form-row">
+      <select id="edit-tx-category">
+        <option value="">-- หมวดหมู่ --</option>
+        <optgroup label="รายรับ"><option>เงินเดือน</option><option>โบนัส</option><option>รายได้เสริม</option><option>ดอกเบี้ย</option><option>อื่นๆ (รายรับ)</option></optgroup>
+        <optgroup label="รายจ่าย"><option>อาหาร</option><option>เดินทาง</option><option>ช้อปปิ้ง</option><option>สุขภาพ</option><option>บันเทิง</option><option>ค่าน้ำค่าไฟ</option><option>อื่นๆ (รายจ่าย)</option></optgroup>
+      </select>
+    </div>
+    <div class="form-row"><input type="text" id="edit-tx-note" placeholder="หมายเหตุ"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary btn-sm" onclick="saveEditTx()">บันทึก</button>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-tx')">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Credit Card Modal -->
+<div class="modal-overlay hidden" id="modal-cc">
+  <div class="modal">
+    <h3>แก้ไขบัตรเครดิต</h3>
+    <div class="form-row"><input type="text" id="edit-cc-name" placeholder="ชื่อบัตร"></div>
+    <div class="form-row">
+      <input type="number" id="edit-cc-limit" placeholder="วงเงิน (บาท)" inputmode="decimal">
+      <input type="number" id="edit-cc-debt" placeholder="หนี้คงค้าง (บาท)" inputmode="decimal">
+    </div>
+    <div class="form-row">
+      <input type="number" id="edit-cc-cutday" placeholder="วันสรุปยอด (เช่น 25)" min="1" max="31" inputmode="numeric">
+      <input type="number" id="edit-cc-dueday" placeholder="วันครบกำหนดชำระ (เช่น 15)" min="1" max="31" inputmode="numeric">
+    </div>
+    <div class="form-row" style="align-items:center;gap:10px">
+      <label style="font-size:13px;color:#555;white-space:nowrap">วงเงินร่วมกับ:</label>
+      <select id="edit-cc-group" style="flex:1">
+        <option value="">ไม่มี (วงเงินของตัวเอง)</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary btn-sm" onclick="saveEditCC()">บันทึก</button>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-cc')">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Monthly Modal -->
+<div class="modal-overlay hidden" id="modal-mo">
+  <div class="modal">
+    <h3>แก้ไขรายจ่ายประจำเดือน</h3>
+    <div class="form-row"><input type="text" id="edit-mo-name" placeholder="รายการ"></div>
+    <div class="form-row">
+      <input type="number" id="edit-mo-amount" placeholder="จำนวนเงิน" inputmode="decimal">
+      <input type="number" id="edit-mo-dueday" placeholder="วันที่ต้องจ่าย" min="1" max="31" inputmode="numeric">
+    </div>
+    <div class="form-row">
+      <select id="edit-mo-category">
+        <option value="">-- หมวดหมู่ --</option>
+        <option>ที่อยู่อาศัย</option><option>สาธารณูปโภค</option><option>สื่อ/บันเทิง</option>
+        <option>ประกัน</option><option>การศึกษา</option><option>อื่นๆ</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary btn-sm" onclick="saveEditMo()">บันทึก</button>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-mo')">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="modal-cc-history" onclick="if(event.target===this)closeModal('modal-cc-history')">
+  <div class="modal" style="max-width:500px;max-height:80vh;display:flex;flex-direction:column">
+    <h3 id="cc-history-modal-title">ประวัติรายการ</h3>
+    <div id="cc-history-modal-list" style="overflow-y:auto;flex:1;margin:0 -4px"></div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-cc-history')">ปิด</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-app-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-database-compat.min.js"></script>
+<script>
+const MONTHS_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+
+let db = null;
+let fbListeners = [];
+let editingTxId = null;
+let editingCCId = null;
+let editingMoId = null;
+let editingTxType = 'income';
+
+let editingLnId = null;
+
+let state = {
+  currentMonth: new Date().getMonth(),
+  currentYear: new Date().getFullYear(),
+  transactions: [],
+  creditCards: [],
+  ccTransactions: [],
+  loans: [],
+  loanTransactions: [],
+  monthlyExpenses: [],
+  monthlyStatus: {},
+  selectedType: 'income',
+  selectedCCAction: 'payment'
+};
+
+function fmt(n) {
+  return '฿' + Math.abs(n).toLocaleString('th-TH', {minimumFractionDigits: 0, maximumFractionDigits: 2});
+}
+function monthKey(y, m) { return y + '-' + String(m+1).padStart(2,'0'); }
+function currentMonthTx() {
+  const key = monthKey(state.currentYear, state.currentMonth);
+  return state.transactions.filter(t => t.monthKey === key);
+}
+
+/* ---- Modal ---- */
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+/* ---- Edit Transaction ---- */
+function editTransaction(id) {
+  const t = state.transactions.find(x => x.id === id);
+  if (!t) return;
+  editingTxId = id;
+  editingTxType = t.type;
+  document.getElementById('edit-tx-name').value = t.name;
+  document.getElementById('edit-tx-amount').value = t.amount;
+  document.getElementById('edit-tx-date').value = t.date;
+  document.getElementById('edit-tx-category').value = t.category || '';
+  document.getElementById('edit-tx-note').value = t.note || '';
+  document.querySelectorAll('#edit-type-chips .chip').forEach(c => c.classList.toggle('selected', c.dataset.type === t.type));
+  openModal('modal-tx');
+}
+function editSelectType(t) {
+  editingTxType = t;
+  document.querySelectorAll('#edit-type-chips .chip').forEach(c => c.classList.toggle('selected', c.dataset.type === t));
+}
+function saveEditTx() {
+  const t = state.transactions.find(x => x.id === editingTxId);
+  if (!t) return;
+  const name = document.getElementById('edit-tx-name').value.trim();
+  const amount = parseFloat(document.getElementById('edit-tx-amount').value);
+  const date = document.getElementById('edit-tx-date').value;
+  if (!name || !amount || !date) { alert('กรุณากรอกข้อมูลให้ครบ'); return; }
+  const d = new Date(date);
+  t.name = name; t.amount = amount; t.date = date;
+  t.category = document.getElementById('edit-tx-category').value;
+  t.note = document.getElementById('edit-tx-note').value.trim();
+  t.type = editingTxType;
+  t.monthKey = monthKey(d.getFullYear(), d.getMonth());
+  saveData(); closeModal('modal-tx'); render();
+}
+
+/* ---- Edit Credit Card ---- */
+function editCreditCard(id) {
+  const c = state.creditCards.find(x => x.id === id);
+  if (!c) return;
+  editingCCId = id;
+  document.getElementById('edit-cc-name').value = c.name;
+  document.getElementById('edit-cc-limit').value = c.limit || '';
+  document.getElementById('edit-cc-debt').value = c.debt || '';
+  document.getElementById('edit-cc-cutday').value = c.cutday || '';
+  document.getElementById('edit-cc-dueday').value = c.dueday || '';
+  populateCCGroupSelect('edit-cc-group', id, c.limitGroup || '');
+  openModal('modal-cc');
+}
+function saveEditCC() {
+  const c = state.creditCards.find(x => x.id === editingCCId);
+  if (!c) return;
+  const name = document.getElementById('edit-cc-name').value.trim();
+  if (!name) { alert('กรุณากรอกชื่อบัตร'); return; }
+  c.name = name;
+  c.limit = parseFloat(document.getElementById('edit-cc-limit').value) || 0;
+  c.debt = parseFloat(document.getElementById('edit-cc-debt').value) || 0;
+  c.cutday = parseInt(document.getElementById('edit-cc-cutday').value) || 0;
+  c.dueday = parseInt(document.getElementById('edit-cc-dueday').value) || 0;
+  c.limitGroup = document.getElementById('edit-cc-group').value || '';
+  saveData(); closeModal('modal-cc'); render();
+}
+
+/* ---- Edit Monthly ---- */
+function editMonthlyExpense(id) {
+  const e = state.monthlyExpenses.find(x => x.id === id);
+  if (!e) return;
+  editingMoId = id;
+  document.getElementById('edit-mo-name').value = e.name;
+  document.getElementById('edit-mo-amount').value = e.amount;
+  document.getElementById('edit-mo-dueday').value = e.dueday || '';
+  document.getElementById('edit-mo-category').value = e.category || '';
+  openModal('modal-mo');
+}
+function saveEditMo() {
+  const e = state.monthlyExpenses.find(x => x.id === editingMoId);
+  if (!e) return;
+  const name = document.getElementById('edit-mo-name').value.trim();
+  const amount = parseFloat(document.getElementById('edit-mo-amount').value);
+  if (!name || !amount) { alert('กรุณากรอกข้อมูลให้ครบ'); return; }
+  e.name = name; e.amount = amount;
+  e.dueday = parseInt(document.getElementById('edit-mo-dueday').value) || 1;
+  e.category = document.getElementById('edit-mo-category').value;
+  saveData(); closeModal('modal-mo'); render();
+}
+
+/* ---- Shared Credit Limit helpers ---- */
+function populateCCGroupSelect(selectId, excludeId, currentGroup) {
+  const sel = document.getElementById(selectId);
+  sel.innerHTML = '<option value="">ไม่มี (วงเงินของตัวเอง)</option>';
+  state.creditCards.filter(c => c.id !== excludeId).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name;
+    if (String(currentGroup) === String(c.id)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function getGroupInfo(card) {
+  // card เป็น member ที่ชี้ไปหา anchor
+  if (card.limitGroup) {
+    const anchor = state.creditCards.find(c => String(c.id) === String(card.limitGroup));
+    if (!anchor) return null;
+    const members = state.creditCards.filter(c => c.id === anchor.id || String(c.limitGroup) === String(anchor.id));
+    const totalDebt = members.reduce((s, c) => s + (c.debt || 0), 0);
+    const others = members.filter(c => c.id !== card.id).map(c => c.name).join(', ');
+    return { anchorName: anchor.name, sharedLimit: anchor.limit, totalDebt, others };
+  }
+  // card เป็น anchor ที่มีบัตรอื่นชี้มาหา
+  const members = state.creditCards.filter(c => String(c.limitGroup) === String(card.id));
+  if (!members.length) return null;
+  const allMembers = [card, ...members];
+  const totalDebt = allMembers.reduce((s, c) => s + (c.debt || 0), 0);
+  const others = members.map(c => c.name).join(', ');
+  return { anchorName: card.name, sharedLimit: card.limit, totalDebt, others };
+}
+
+/* ---- Firebase ---- */
+function setSyncStatus(msg, cls) {
+  const el = document.getElementById('syncStatus');
+  el.textContent = msg;
+  el.className = 'sync-status ' + cls;
+}
+
+function parseFirebaseConfig(text) {
+  try {
+    const cleaned = text.trim().replace(/^const\s+firebaseConfig\s*=\s*/,'').replace(/;$/,'').replace(/([{,]\s*)(\w+)\s*:/g,'$1"$2":');
+    return JSON.parse(cleaned);
+  } catch(e) {
+    try {
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) return JSON.parse(m[0].replace(/([{,]\s*)(\w+)\s*:/g,'$1"$2":'));
+    } catch(e2) {}
+    return null;
+  }
+}
+
+function saveFirebaseConfig() {
+  const raw = document.getElementById('fb-config-input').value.trim();
+  const config = parseFirebaseConfig(raw);
+  if (!config || !config.apiKey || !config.databaseURL) { alert('รูปแบบ config ไม่ถูกต้อง กรุณาตรวจสอบว่ามี apiKey และ databaseURL'); return; }
+  localStorage.setItem('fb-config', JSON.stringify(config));
+  initFirebase(config);
+}
+
+function initFirebase(config) {
+  try {
+    if (firebase.apps.length) firebase.apps.forEach(a => a.delete());
+    firebase.initializeApp(config);
+    db = firebase.database();
+    setSyncStatus('⬤ กำลังเชื่อมต่อ...', 'sync-off');
+    startListeners();
+    document.getElementById('fb-status-card').style.display = 'block';
+    document.getElementById('fb-status-text').textContent = 'เชื่อมต่อกับ: ' + config.projectId;
+  } catch(e) {
+    setSyncStatus('⬤ เชื่อมต่อไม่สำเร็จ', 'sync-err');
+  }
+}
+
+function startListeners() {
+  const keys = ['transactions','creditCards','ccTransactions','loans','loanTransactions','monthlyExpenses','monthlyStatus'];
+  fbListeners.forEach(r => r.off()); fbListeners = [];
+  let loaded = 0;
+  keys.forEach(key => {
+    const ref = db.ref('budget/' + key);
+    fbListeners.push(ref);
+    ref.on('value', snap => {
+      const val = snap.val();
+      state[key] = key === 'monthlyStatus' ? (val || {}) : (val ? Object.values(val) : []);
+      if (++loaded >= keys.length) { setSyncStatus('⬤ ซิงค์แล้ว', 'sync-ok'); render(); }
+    }, err => setSyncStatus('⬤ ข้อผิดพลาด', 'sync-err'));
+  });
+}
+
+function disconnectFirebase() {
+  if (!confirm('ยกเลิกการเชื่อมต่อ Firebase?')) return;
+  fbListeners.forEach(r => r.off()); fbListeners = []; db = null;
+  localStorage.removeItem('fb-config');
+  document.getElementById('fb-status-card').style.display = 'none';
+  setSyncStatus('⬤ ยังไม่ได้เชื่อมต่อ', 'sync-off');
+  loadLocal();
+}
+
+function saveData() {
+  if (db) {
+    const toObj = arr => arr.reduce((o, item) => { o[item.id] = item; return o; }, {});
+    db.ref('budget/transactions').set(toObj(state.transactions));
+    db.ref('budget/creditCards').set(toObj(state.creditCards));
+    db.ref('budget/ccTransactions').set(toObj(state.ccTransactions));
+    db.ref('budget/loans').set(toObj(state.loans));
+    db.ref('budget/loanTransactions').set(toObj(state.loanTransactions));
+    db.ref('budget/monthlyExpenses').set(toObj(state.monthlyExpenses));
+    db.ref('budget/monthlyStatus').set(state.monthlyStatus || {});
+  } else {
+    localStorage.setItem('budget-local', JSON.stringify({
+      transactions: state.transactions, creditCards: state.creditCards,
+      ccTransactions: state.ccTransactions, loans: state.loans, loanTransactions: state.loanTransactions,
+      monthlyExpenses: state.monthlyExpenses, monthlyStatus: state.monthlyStatus
+    }));
+  }
+}
+
+function loadLocal() {
+  const saved = localStorage.getItem('budget-local');
+  if (saved) { const d = JSON.parse(saved); Object.assign(state, { transactions: d.transactions||[], creditCards: d.creditCards||[], ccTransactions: d.ccTransactions||[], loans: d.loans||[], loanTransactions: d.loanTransactions||[], monthlyExpenses: d.monthlyExpenses||[], monthlyStatus: d.monthlyStatus||{} }); }
+  render();
+}
+
+/* ---- UI helpers ---- */
+function changeMonth(d) {
+  state.currentMonth += d;
+  if (state.currentMonth > 11) { state.currentMonth = 0; state.currentYear++; }
+  if (state.currentMonth < 0) { state.currentMonth = 11; state.currentYear--; }
+  render();
+}
+
+function showTab(tab) {
+  const tabs = ['overview','transactions','credit','loans','monthly','settings'];
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', tabs[i] === tab));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + tab).classList.add('active');
+  if (tab === 'credit') populateCCGroupSelect('cc-group-select', -1, '');
+  if (tab === 'loans') { const today = new Date().toISOString().split('T')[0]; document.getElementById('ln-pay-date').value = today; }
+}
+
+function selectType(t) {
+  state.selectedType = t;
+  document.querySelectorAll('#type-chips .chip').forEach(c => c.classList.toggle('selected', c.dataset.type === t));
+}
+function selectCCAction(a) {
+  state.selectedCCAction = a;
+  document.querySelectorAll('#cc-action-chips .chip').forEach(c => c.classList.toggle('selected', c.dataset.action === a));
+}
+
+/* ---- CRUD ---- */
+function addTransaction() {
+  const name = document.getElementById('tx-name').value.trim();
+  const amount = parseFloat(document.getElementById('tx-amount').value);
+  const date = document.getElementById('tx-date').value;
+  const category = document.getElementById('tx-category').value;
+  const note = document.getElementById('tx-note').value.trim();
+  if (!name || !amount || !date) { alert('กรุณากรอกรายการ, จำนวนเงิน และวันที่'); return; }
+  const d = new Date(date);
+  state.transactions.unshift({ id: Date.now(), name, amount, date, category, note, type: state.selectedType, monthKey: monthKey(d.getFullYear(), d.getMonth()) });
+  saveData();
+  ['tx-name','tx-amount','tx-note'].forEach(id => document.getElementById(id).value = '');
+  render();
+}
+
+function deleteTransaction(id) {
+  if (!confirm('ลบรายการนี้?')) return;
+  state.transactions = state.transactions.filter(t => t.id !== id);
+  saveData(); render();
+}
+
+function addCreditCard() {
+  const name = document.getElementById('cc-name').value.trim();
+  const limit = parseFloat(document.getElementById('cc-limit').value) || 0;
+  const debt = parseFloat(document.getElementById('cc-debt-input').value) || 0;
+  const dueday = parseInt(document.getElementById('cc-dueday').value) || 0;
+  const cutday = parseInt(document.getElementById('cc-cutday').value) || 0;
+  const limitGroup = document.getElementById('cc-group-select').value || '';
+  if (!name) { alert('กรุณากรอกชื่อบัตร'); return; }
+  state.creditCards.push({ id: Date.now(), name, limit, debt, cutday, dueday, limitGroup });
+  saveData();
+  ['cc-name','cc-limit','cc-debt-input','cc-cutday','cc-dueday'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('cc-group-select').value = '';
+  render();
+}
+
+function deleteCreditCard(id) {
+  if (!confirm('ลบบัตรนี้?')) return;
+  state.creditCards = state.creditCards.filter(c => c.id !== id);
+  state.ccTransactions = state.ccTransactions.filter(t => t.cardId !== id);
+  saveData(); render();
+}
+
+function openCCPayment(cardId) {
+  const sel = document.getElementById('cc-select-card');
+  sel.innerHTML = state.creditCards.map(c => `<option value="${c.id}" ${c.id===cardId?'selected':''}>${c.name}</option>`).join('');
+  if (!cardId && state.creditCards.length) sel.value = state.creditCards[0].id;
+  document.getElementById('cc-payment-form').style.display = 'block';
+  document.getElementById('cc-payment-form').scrollIntoView({behavior:'smooth'});
+}
+
+function saveCCTransaction() {
+  const cardId = parseInt(document.getElementById('cc-select-card').value);
+  const amount = parseFloat(document.getElementById('cc-pay-amount').value);
+  const date = document.getElementById('cc-pay-date').value;
+  const note = document.getElementById('cc-pay-note').value.trim();
+  if (!cardId || !amount || !date) { alert('กรุณากรอกข้อมูลให้ครบ'); return; }
+  const card = state.creditCards.find(c => c.id === cardId);
+  if (!card) return;
+  const isPayment = state.selectedCCAction === 'payment';
+  card.debt = Math.max(0, (card.debt || 0) + (isPayment ? -amount : amount));
+  const txId = Date.now();
+  const ccTx = { id: txId, cardId, cardName: card.name, amount, date, note, type: state.selectedCCAction };
+  // ชำระบัตร → สร้าง transaction รายจ่ายอัตโนมัติ
+  if (isPayment) {
+    const mk = date.slice(0,7).replace('-','');
+    const [y,m] = date.split('-');
+    const mKey = y + '-' + m;
+    state.transactions.push({ id: txId + 1, type: 'expense', amount, name: 'ชำระบัตร: ' + card.name + (note?' ('+note+')':''), date, monthKey: mKey, category: 'บัตรเครดิต', autoFromCC: true, ccTxId: txId });
+    ccTx.linkedTxId = txId + 1;
+  }
+  state.ccTransactions.unshift(ccTx);
+  saveData();
+  document.getElementById('cc-pay-amount').value = '';
+  document.getElementById('cc-pay-note').value = '';
+  document.getElementById('cc-payment-form').style.display = 'none';
+  render();
+}
+
+function openCCHistory(cardId) {
+  const card = state.creditCards.find(c => c.id === cardId);
+  if (!card) return;
+  document.getElementById('cc-history-modal-title').textContent = 'ประวัติรายการ: ' + card.name;
+  const curMonth = state.currentYear+'-'+(String(state.currentMonth+1).padStart(2,'0'));
+  const txs = state.ccTransactions.filter(t => t.cardId === cardId && t.date && t.date.startsWith(curMonth));
+  document.getElementById('cc-history-modal-list').innerHTML = txs.length ? txs.map(t => `
+    <div class="list-item">
+      <div class="item-dot" style="background:${t.type==='payment'?'#4caf50':'#f44336'}"></div>
+      <div class="item-info">
+        <div class="item-name">${t.type==='payment'?'ชำระ':'ใช้จ่าย'}${t.note?' · '+t.note:''}</div>
+        <div class="item-meta">${t.date}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="item-amount ${t.type==='payment'?'amount-income':'amount-expense'}">${t.type==='payment'?'−':'+'}${fmt(t.amount)}</div>
+        <div class="item-actions">
+          <button class="btn-edit" onclick="editCCTx(${t.id});closeModal('modal-cc-history')">แก้ไข</button>
+          <button class="btn-danger" onclick="deleteCCTx(${t.id});openCCHistory(${cardId})">ลบ</button>
+        </div>
+      </div>
+    </div>`).join('') : '<div class="empty">ยังไม่มีรายการ</div>';
+  openModal('modal-cc-history');
+}
+
+function deleteCCTx(id) {
+  const t = state.ccTransactions.find(x => x.id === id);
+  if (!t) return;
+  if (!confirm('ลบรายการนี้?')) return;
+  // คืนหนี้บัตร
+  const card = state.creditCards.find(c => c.id === t.cardId);
+  if (card) card.debt = Math.max(0, (card.debt || 0) + (t.type === 'payment' ? t.amount : -t.amount));
+  // ลบ transaction รายจ่ายที่ผูกไว้
+  if (t.linkedTxId) state.transactions = state.transactions.filter(x => x.id !== t.linkedTxId);
+  state.ccTransactions = state.ccTransactions.filter(x => x.id !== id);
+  saveData(); render();
+}
+
+function editCCTx(id) {
+  const t = state.ccTransactions.find(x => x.id === id);
+  if (!t) return;
+  const newAmount = parseFloat(prompt('แก้ไขจำนวนเงิน:', t.amount));
+  if (isNaN(newAmount) || newAmount <= 0) return;
+  const newNote = prompt('แก้ไขหมายเหตุ:', t.note || '') ?? t.note;
+  const diff = newAmount - t.amount;
+  const card = state.creditCards.find(c => c.id === t.cardId);
+  if (card) card.debt = Math.max(0, (card.debt || 0) + (t.type === 'payment' ? -diff : diff));
+  t.amount = newAmount;
+  t.note = newNote;
+  // อัพเดท transaction รายจ่ายที่ผูกไว้
+  if (t.linkedTxId) {
+    const linked = state.transactions.find(x => x.id === t.linkedTxId);
+    if (linked) { linked.amount = newAmount; linked.name = 'ชำระบัตร: ' + t.cardName + (newNote?' ('+newNote+')':''); }
+  }
+  saveData(); render();
+}
+
+/* ---- Loans ---- */
+const loanTypeLabel = { bnpl: 'BNPL', cash: 'กดเงินสด/สินเชื่อ', installment: 'ผ่อนสินค้า', other: 'อื่นๆ' };
+
+function addLoan() {
+  const name = document.getElementById('ln-name').value.trim();
+  const debt = parseFloat(document.getElementById('ln-debt').value) || 0;
+  const monthly = parseFloat(document.getElementById('ln-monthly').value) || 0;
+  const dueday = parseInt(document.getElementById('ln-dueday').value) || 0;
+  const type = document.getElementById('ln-type').value;
+  const note = document.getElementById('ln-note').value.trim();
+  if (!name) { alert('กรุณากรอกชื่อ'); return; }
+  state.loans.push({ id: Date.now(), name, debt, monthly, dueday, type, note });
+  saveData();
+  ['ln-name','ln-debt','ln-monthly','ln-dueday','ln-note'].forEach(id => document.getElementById(id).value = '');
+  render();
+}
+
+function deleteLoan(id) {
+  if (!confirm('ลบรายการนี้?')) return;
+  state.loans = state.loans.filter(l => l.id !== id);
+  state.loanTransactions = state.loanTransactions.filter(t => t.loanId !== id);
+  saveData(); render();
+}
+
+function editLoan(id) {
+  const l = state.loans.find(x => x.id === id);
+  if (!l) return;
+  editingLnId = id;
+  document.getElementById('edit-ln-name').value = l.name;
+  document.getElementById('edit-ln-debt').value = l.debt || '';
+  document.getElementById('edit-ln-monthly').value = l.monthly || '';
+  document.getElementById('edit-ln-dueday').value = l.dueday || '';
+  document.getElementById('edit-ln-type').value = l.type || 'bnpl';
+  document.getElementById('edit-ln-note').value = l.note || '';
+  openModal('modal-ln');
+}
+
+function saveEditLoan() {
+  const l = state.loans.find(x => x.id === editingLnId);
+  if (!l) return;
+  const name = document.getElementById('edit-ln-name').value.trim();
+  if (!name) { alert('กรุณากรอกชื่อ'); return; }
+  l.name = name;
+  l.debt = parseFloat(document.getElementById('edit-ln-debt').value) || 0;
+  l.monthly = parseFloat(document.getElementById('edit-ln-monthly').value) || 0;
+  l.dueday = parseInt(document.getElementById('edit-ln-dueday').value) || 0;
+  l.type = document.getElementById('edit-ln-type').value;
+  l.note = document.getElementById('edit-ln-note').value.trim();
+  saveData(); closeModal('modal-ln'); render();
+}
+
+function openLoanPayment(loanId) {
+  const sel = document.getElementById('ln-select');
+  sel.innerHTML = state.loans.map(l => `<option value="${l.id}" ${l.id===loanId?'selected':''}>${l.name}</option>`).join('');
+  document.getElementById('loan-payment-form').style.display = 'block';
+  document.getElementById('loan-payment-form').scrollIntoView({behavior:'smooth'});
+}
+
+function saveLoanPayment() {
+  const loanId = parseInt(document.getElementById('ln-select').value);
+  const amount = parseFloat(document.getElementById('ln-pay-amount').value);
+  const date = document.getElementById('ln-pay-date').value;
+  const note = document.getElementById('ln-pay-note').value.trim();
+  if (!loanId || !amount || !date) { alert('กรุณากรอกข้อมูลให้ครบ'); return; }
+  const loan = state.loans.find(l => l.id === loanId);
+  if (!loan) return;
+  loan.debt = Math.max(0, (loan.debt || 0) - amount);
+  const txId = Date.now();
+  const lnTx = { id: txId, loanId, loanName: loan.name, amount, date, note };
+  const [y,m] = date.split('-');
+  state.transactions.push({ id: txId+1, type: 'expense', amount, name: 'ชำระ: '+loan.name+(note?' ('+note+')':''), date, monthKey: y+'-'+m, category: 'ผ่อน/สินเชื่อ', autoFromLoan: true, loanTxId: txId });
+  lnTx.linkedTxId = txId+1;
+  state.loanTransactions.unshift(lnTx);
+  saveData();
+  document.getElementById('ln-pay-amount').value = '';
+  document.getElementById('ln-pay-note').value = '';
+  document.getElementById('loan-payment-form').style.display = 'none';
+  render();
+}
+
+function deleteLoanTx(id) {
+  const t = state.loanTransactions.find(x => x.id === id);
+  if (!t || !confirm('ลบรายการนี้?')) return;
+  const loan = state.loans.find(l => l.id === t.loanId);
+  if (loan) loan.debt = (loan.debt || 0) + t.amount;
+  if (t.linkedTxId) state.transactions = state.transactions.filter(x => x.id !== t.linkedTxId);
+  state.loanTransactions = state.loanTransactions.filter(x => x.id !== id);
+  saveData(); render();
+}
+
+function editLoanTx(id) {
+  const t = state.loanTransactions.find(x => x.id === id);
+  if (!t) return;
+  const newAmount = parseFloat(prompt('แก้ไขจำนวนเงิน:', t.amount));
+  if (isNaN(newAmount) || newAmount <= 0) return;
+  const newNote = prompt('แก้ไขหมายเหตุ:', t.note || '') ?? t.note;
+  const diff = newAmount - t.amount;
+  const loan = state.loans.find(l => l.id === t.loanId);
+  if (loan) loan.debt = Math.max(0, (loan.debt || 0) - diff);
+  t.amount = newAmount; t.note = newNote;
+  if (t.linkedTxId) {
+    const linked = state.transactions.find(x => x.id === t.linkedTxId);
+    if (linked) { linked.amount = newAmount; linked.name = 'ชำระ: '+t.loanName+(newNote?' ('+newNote+')':''); }
+  }
+  saveData(); render();
+}
+
+function addMonthlyExpense() {
+  const name = document.getElementById('mo-name').value.trim();
+  const amount = parseFloat(document.getElementById('mo-amount').value);
+  const dueday = parseInt(document.getElementById('mo-dueday').value) || 1;
+  const category = document.getElementById('mo-category').value;
+  if (!name || !amount) { alert('กรุณากรอกรายการและจำนวนเงิน'); return; }
+  const mk2 = monthKey(state.currentYear, state.currentMonth);
+  state.monthlyExpenses.push({ id: Date.now(), name, amount, dueday, category, month: mk2 });
+  saveData();
+  ['mo-name','mo-amount','mo-dueday'].forEach(id => document.getElementById(id).value = '');
+  render();
+}
+
+function deleteMonthlyExpense(id) {
+  if (!confirm('ลบรายการนี้?')) return;
+  state.monthlyExpenses = state.monthlyExpenses.filter(e => e.id !== id);
+  saveData(); render();
+}
+
+function toggleMonthlyPaid(id) {
+  const key = monthKey(state.currentYear, state.currentMonth) + '-' + id;
+  const txKey = key + '-txid';
+  const nowPaid = !state.monthlyStatus[key];
+  state.monthlyStatus[key] = nowPaid;
+
+  const expense = state.monthlyExpenses.find(e => e.id === id);
+  if (!expense) { saveData(); render(); return; }
+
+  if (nowPaid) {
+    // สร้าง transaction รายจ่ายอัตโนมัติ
+    const txId = Date.now();
+    const d = new Date(state.currentYear, state.currentMonth, expense.dueday || 1);
+    state.transactions.push({
+      id: txId,
+      type: 'expense',
+      amount: expense.amount,
+      name: expense.name + (expense.category ? ' (' + expense.category + ')' : ''),
+      date: d.toISOString().split('T')[0],
+      monthKey: monthKey(state.currentYear, state.currentMonth),
+      category: expense.category || 'รายเดือน',
+      autoFromMonthly: true
+    });
+    state.monthlyStatus[txKey] = txId;
+
+    // หักหนี้บัตร/สินเชื่อ
+    const ccMatch = state.creditCards.find(c => expense.category === '💳 ' + c.name);
+    const lnMatch = state.loans.find(l => expense.category === '💸 ' + l.name);
+    if (ccMatch) { ccMatch.debt = Math.max(0, (ccMatch.debt || 0) - expense.amount); }
+    else if (lnMatch) { lnMatch.debt = Math.max(0, (lnMatch.debt || 0) - expense.amount); }
+  } else {
+    // ลบ transaction ที่สร้างไว้
+    const txId = state.monthlyStatus[txKey];
+    if (txId) {
+      state.transactions = state.transactions.filter(t => t.id !== txId);
+      delete state.monthlyStatus[txKey];
+    }
+
+    // คืนหนี้บัตร/สินเชื่อ
+    const ccMatch = state.creditCards.find(c => expense.category === '💳 ' + c.name);
+    const lnMatch = state.loans.find(l => expense.category === '💸 ' + l.name);
+    if (ccMatch) { ccMatch.debt = (ccMatch.debt || 0) + expense.amount; }
+    else if (lnMatch) { lnMatch.debt = (lnMatch.debt || 0) + expense.amount; }
+  }
+
+  saveData(); render();
+}
+
+function exportData() {
+  const blob = new Blob([JSON.stringify({ transactions: state.transactions, creditCards: state.creditCards, ccTransactions: state.ccTransactions, loans: state.loans, loanTransactions: state.loanTransactions, monthlyExpenses: state.monthlyExpenses, monthlyStatus: state.monthlyStatus }, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'budget-backup-' + new Date().toISOString().split('T')[0] + '.json'; a.click();
+}
+
+function importData(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const d = JSON.parse(ev.target.result);
+      if (!confirm('นำเข้าข้อมูลจะแทนที่ข้อมูลปัจจุบัน ยืนยัน?')) return;
+      Object.assign(state, { transactions: d.transactions||[], creditCards: d.creditCards||[], ccTransactions: d.ccTransactions||[], loans: d.loans||[], loanTransactions: d.loanTransactions||[], monthlyExpenses: d.monthlyExpenses||[], monthlyStatus: d.monthlyStatus||{} });
+      saveData(); render(); alert('นำเข้าสำเร็จ');
+    } catch(err) { alert('ไฟล์ไม่ถูกต้อง'); }
+  };
+  reader.readAsText(file);
+}
+
+/* ---- Render ---- */
+function txItemHtml(t, editable) {
+  return `<div class="list-item">
+    <div class="item-dot dot-${t.type}"></div>
+    <div class="item-info">
+      <div class="item-name">${t.name}</div>
+      <div class="item-meta">${t.date}${t.category?' · '+t.category:''}${t.note?' · '+t.note:''}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <div class="item-amount amount-${t.type}">${t.type==='income'?'+':'−'}${fmt(t.amount)}</div>
+      ${editable ? `<div class="item-actions"><button class="btn-edit" onclick="editTransaction(${t.id})">แก้ไข</button><button class="btn-danger" onclick="deleteTransaction(${t.id})">ลบ</button></div>` : ''}
+    </div>
+  </div>`;
+}
+
+function populateMoCategory() {
+  const staticOpts = ['-- หมวดหมู่ --','ที่อยู่อาศัย','สาธารณูปโภค','สื่อ/บันเทิง','ประกัน','การศึกษา','อื่นๆ'];
+  const ccOpts = state.creditCards.map(c => '💳 ' + c.name);
+  const lnOpts = state.loans.map(l => '💸 ' + l.name);
+  const allOpts = [...staticOpts.slice(1), ...ccOpts, ...lnOpts];
+  ['mo-category','edit-mo-category'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">-- หมวดหมู่ --</option>' +
+      (ccOpts.length ? '<optgroup label="💳 บัตรเครดิต/บัตรกดเงินสด">' + ccOpts.map(o=>`<option>${o}</option>`).join('') + '</optgroup>' : '') +
+      (lnOpts.length ? '<optgroup label="💸 ผ่อน/สินเชื่อ">' + lnOpts.map(o=>`<option>${o}</option>`).join('') + '</optgroup>' : '') +
+      '<optgroup label="หมวดหมู่">' + staticOpts.slice(1).map(o=>`<option>${o}</option>`).join('') + '</optgroup>';
+    sel.value = cur;
+  });
+}
+
+function render() {
+  const mk = monthKey(state.currentYear, state.currentMonth);
+  document.getElementById('currentMonthLabel').textContent = MONTHS_TH[state.currentMonth] + ' ' + (state.currentYear + 543);
+
+  const txs = currentMonthTx();
+  const income = txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const expense = txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const totalDebt = state.creditCards.reduce((s,c)=>s+(c.debt||0),0) + state.loans.reduce((s,l)=>s+(l.debt||0),0);
+  populateMoCategory();
+  const cumulativeBalance = state.transactions.reduce((s,t)=>t.type==='income'?s+t.amount:s-t.amount, 0);
+  document.getElementById('s-income').textContent = fmt(income);
+  document.getElementById('s-expense').textContent = fmt(expense);
+  document.getElementById('s-balance').textContent = fmt(cumulativeBalance);
+  const monthNet = income - expense;
+  document.getElementById('s-balance-month').textContent = (monthNet < 0 ? '-' : '+') + fmt(monthNet);
+  document.getElementById('s-balance-month').style.color = monthNet < 0 ? '#f44336' : '#2d6a4f';
+  document.getElementById('s-debt').textContent = fmt(totalDebt);
+
+  // CC due date alerts
+  const today = new Date().getDate();
+  const ccAlerts = state.creditCards.filter(c => c.dueday).map(c => {
+    const diff = c.dueday - today;
+    if (diff < 0 || diff > 7) return null;
+    const color = diff <= 2 ? '#f44336' : '#ff9800';
+    const label = diff === 0 ? 'วันนี้!' : diff < 0 ? 'เลยกำหนดแล้ว!' : `อีก ${diff} วัน`;
+    return `<div style="background:${color};color:#fff;border-radius:10px;padding:10px 14px;margin-bottom:8px;font-size:14px">
+      ⚠️ <b>${c.name}</b> ครบกำหนดชำระวันที่ ${c.dueday} — <b>${label}</b>
+      ${c.debt ? ' · ยอดค้าง ' + fmt(c.debt) : ''}
+    </div>`;
+  }).filter(Boolean);
+  document.getElementById('cc-due-alert').innerHTML = ccAlerts.join('');
+
+  document.getElementById('recent-list').innerHTML = txs.length ? txs.slice(0,5).map(t=>txItemHtml(t,false)).join('') : '<div class="empty">ยังไม่มีรายการเดือนนี้</div>';
+
+  const unpaid = state.monthlyExpenses.filter(e => (!e.month || e.month === mk) && !state.monthlyStatus[mk+'-'+e.id]);
+  document.getElementById('unpaid-monthly').innerHTML = unpaid.length ? unpaid.map(e=>`
+    <div class="list-item">
+      <div class="item-dot dot-expense"></div>
+      <div class="item-info"><div class="item-name">${e.name}</div><div class="item-meta">ครบกำหนดวันที่ ${e.dueday}${e.category?' · '+e.category:''}</div></div>
+      <div class="item-amount amount-expense">${fmt(e.amount)}</div>
+    </div>`).join('') : '<div class="empty">จ่ายครบแล้ว 🎉</div>';
+
+  document.getElementById('tx-list').innerHTML = txs.length ? txs.map(t=>txItemHtml(t,true)).join('') : '<div class="empty">ยังไม่มีรายการเดือนนี้</div>';
+
+  const ccListEl = document.getElementById('cc-list');
+  if (!state.creditCards.length) {
+    ccListEl.innerHTML = '<div class="empty" style="background:#fff;border-radius:12px;border:1px solid #e8e8e0;padding:32px;">ยังไม่มีบัตรเครดิต</div>';
+  } else {
+    ccListEl.innerHTML = state.creditCards.map(c => {
+      const grp = getGroupInfo(c);
+      let pct, color, limitLabel, debtLabel, sharedNote = '';
+      if (grp) {
+        pct = grp.sharedLimit > 0 ? Math.min(100,(grp.totalDebt/grp.sharedLimit)*100) : 0;
+        color = pct>80?'#f44336':pct>50?'#ff9800':'#4caf50';
+        limitLabel = fmt(grp.sharedLimit);
+        debtLabel = fmt(c.debt||0);
+        sharedNote = `<span class="cc-group-badge">วงเงินร่วมกับ ${grp.anchorName} · รวม ${fmt(grp.totalDebt)} / ${fmt(grp.sharedLimit)}</span>`;
+      } else {
+        pct = c.limit > 0 ? Math.min(100,((c.debt||0)/c.limit)*100) : 0;
+        color = pct>80?'#f44336':pct>50?'#ff9800':'#4caf50';
+        limitLabel = fmt(c.limit||0);
+        debtLabel = fmt(c.debt||0);
+      }
+      return `<div class="cc-card">
+        <div class="cc-header">
+          <div style="font-size:26px;flex-shrink:0">💳</div>
+          <div class="item-info">
+            <div class="cc-name">${c.name}</div>
+            <div style="font-size:12px;color:#888;margin-top:2px">${c.cutday?'สรุปยอดวันที่ '+c.cutday+' · ':''} ${c.dueday?'ชำระภายในวันที่ '+c.dueday:'ไม่ระบุวันชำระ'}</div>
+            ${sharedNote ? '<div style="margin-top:4px">'+sharedNote+'</div>' : ''}
+          </div>
+          <div class="item-actions">
+            <button class="btn-edit" onclick="openCCHistory(${c.id})">ประวัติ</button>
+            <button class="btn-edit" onclick="editCreditCard(${c.id})">แก้ไข</button>
+            <button class="btn-danger" onclick="deleteCreditCard(${c.id})">ลบ</button>
+          </div>
+        </div>
+        <div class="cc-body">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span style="font-size:13px;color:#888">หนี้คงค้าง</span>
+            <span class="cc-debt">${debtLabel}</span>
+          </div>
+          <div class="cc-progress"><div class="cc-progress-bar" style="width:${pct.toFixed(0)}%;background:${color}"></div></div>
+          <div class="cc-amounts"><span>ใช้ไป ${pct.toFixed(0)}%</span><span>วงเงิน ${limitLabel}</span></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Loans render
+  const loanListEl = document.getElementById('loan-list');
+  if (!state.loans.length) {
+    loanListEl.innerHTML = '<div class="empty" style="background:#fff;border-radius:12px;border:1px solid #e8e8e0;padding:32px;">ยังไม่มีรายการสินเชื่อ</div>';
+  } else {
+    loanListEl.innerHTML = state.loans.map(l => {
+      const installmentsLeft = l.monthly > 0 ? Math.ceil((l.debt||0) / l.monthly) : null;
+      return `<div class="cc-card">
+        <div class="cc-header">
+          <div style="font-size:26px;flex-shrink:0">💸</div>
+          <div class="item-info">
+            <div class="cc-name">${l.name}</div>
+            <div style="font-size:12px;color:#888;margin-top:2px">${loanTypeLabel[l.type]||''}${l.dueday?' · ครบกำหนดวันที่ '+l.dueday:''}${l.note?' · '+l.note:''}</div>
+          </div>
+          <div class="item-actions">
+            <button class="btn-edit" onclick="editLoan(${l.id})">แก้ไข</button>
+            <button class="btn-danger" onclick="deleteLoan(${l.id})">ลบ</button>
+          </div>
+        </div>
+        <div class="cc-body">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span style="font-size:13px;color:#888">หนี้คงเหลือ</span>
+            <span class="cc-debt">${fmt(l.debt||0)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#888;margin-top:6px">
+            <span>ผ่อนต่อเดือน ${l.monthly>0?fmt(l.monthly):'-'}</span>
+            <span>${installmentsLeft!==null?'เหลือประมาณ '+installmentsLeft+' งวด':''}</span>
+          </div>
+        </div>
+        <div class="cc-actions">
+          <button class="btn btn-primary btn-sm" onclick="openLoanPayment(${l.id})">+ บันทึกการชำระ</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  const curMonthLoan = state.loanTransactions.filter(t => t.date && t.date.startsWith(state.currentYear+'-'+(String(state.currentMonth+1).padStart(2,'0'))));
+  if (curMonthLoan.length) {
+    document.getElementById('loan-history-card').style.display = 'block';
+    document.getElementById('loan-history-list').innerHTML = curMonthLoan.map(t=>`
+      <div class="list-item">
+        <div class="item-dot" style="background:#4caf50"></div>
+        <div class="item-info"><div class="item-name">ชำระ: ${t.loanName}</div><div class="item-meta">${t.date}${t.note?' · '+t.note:''}</div></div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="item-amount amount-income">−${fmt(t.amount)}</div>
+          <div class="item-actions">
+            <button class="btn-edit" onclick="editLoanTx(${t.id})">แก้ไข</button>
+            <button class="btn-danger" onclick="deleteLoanTx(${t.id})">ลบ</button>
+          </div>
+        </div>
+      </div>`).join('');
+  } else { document.getElementById('loan-history-card').style.display = 'none'; }
+
+
+  const curMonthExpenses = state.monthlyExpenses.filter(e => !e.month || e.month === mk);
+  document.getElementById('monthly-list').innerHTML = curMonthExpenses.length ? curMonthExpenses.map(e=>{
+    const paid = !!state.monthlyStatus[mk+'-'+e.id];
+    return `<div class="monthly-item">
+      <div class="monthly-status ${paid?'paid':''}" onclick="toggleMonthlyPaid(${e.id})">${paid?'✓':''}</div>
+      <div class="item-info">
+        <div class="item-name" style="${paid?'text-decoration:line-through;color:#aaa':''}">${e.name}</div>
+        <div class="item-meta">วันที่ ${e.dueday}${e.category?' · '+e.category:''}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="item-amount amount-expense">${fmt(e.amount)}</div>
+        <div class="item-actions">
+          <button class="btn-edit" onclick="editMonthlyExpense(${e.id})">แก้ไข</button>
+          <button class="btn-danger" onclick="deleteMonthlyExpense(${e.id})">ลบ</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('') : '<div class="empty">ยังไม่มีรายการ</div>';
+
+  populateCCGroupSelect('cc-group-select', -1, '');
+}
+
+(function init() {
+  const today = new Date();
+  document.getElementById('tx-date').value = today.toISOString().split('T')[0];
+  document.getElementById('cc-pay-date').value = today.toISOString().split('T')[0];
+  const cfg = localStorage.getItem('fb-config');
+  const builtIn = {
+    apiKey: "AIzaSyA5ObZ-_Nh5jpxAlunB15wNCdxMOSGfyTM",
+    authDomain: "inoutcome-dacb9.firebaseapp.com",
+    databaseURL: "https://inoutcome-dacb9-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "inoutcome-dacb9",
+    storageBucket: "inoutcome-dacb9.firebasestorage.app",
+    messagingSenderId: "283308803281",
+    appId: "1:283308803281:web:c77fff489895d2fd31f1f0"
+  };
+  const config = cfg ? JSON.parse(cfg) : builtIn;
+  localStorage.setItem('fb-config', JSON.stringify(config));
+  document.getElementById('fb-config-input').value = JSON.stringify(config, null, 2);
+  initFirebase(config);
+})();
 </script>
 </body>
 </html>
