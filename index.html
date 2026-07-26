@@ -859,15 +859,29 @@ function saveFirebaseConfig() {
 
 function initFirebase(config) {
   try {
-    if (firebase.apps.length) firebase.apps.forEach(a => a.delete());
-    firebase.initializeApp(config);
-    db = firebase.database();
-    setSyncStatus('⬤ กำลังเชื่อมต่อ...', 'sync-off');
-    startListeners();
-    document.getElementById('fb-status-row').style.display = 'flex';
-    document.getElementById('fb-status-text').textContent = 'เชื่อมต่อกับ: ' + config.projectId;
+    // delete existing apps before reinit
+    const apps = firebase.apps.slice();
+    const doInit = () => {
+      try {
+        firebase.initializeApp(config);
+        db = firebase.database();
+        setSyncStatus('⬤ กำลังเชื่อมต่อ...', 'sync-off');
+        startListeners();
+        document.getElementById('fb-status-row').style.display = 'flex';
+        document.getElementById('fb-status-text').textContent = 'เชื่อมต่อกับ: ' + config.projectId;
+      } catch(e) {
+        setSyncStatus('⬤ เชื่อมต่อไม่สำเร็จ', 'sync-err');
+        loadLocal();
+      }
+    };
+    if (apps.length) {
+      Promise.all(apps.map(a => a.delete())).then(doInit).catch(doInit);
+    } else {
+      doInit();
+    }
   } catch(e) {
     setSyncStatus('⬤ เชื่อมต่อไม่สำเร็จ', 'sync-err');
+    loadLocal();
   }
 }
 
@@ -882,7 +896,7 @@ function startListeners() {
       const val = snap.val();
       state[key] = key === 'monthlyStatus' ? (val || {}) : (val ? Object.values(val) : []);
       if (++loaded >= keys.length) { setSyncStatus('⬤ ซิงค์แล้ว', 'sync-ok'); render(); }
-    }, err => setSyncStatus('⬤ ข้อผิดพลาด', 'sync-err'));
+    }, err => { setSyncStatus('⬤ Firebase ขัดข้อง', 'sync-err'); if (loaded === 0) loadLocal(); });
   });
 }
 
