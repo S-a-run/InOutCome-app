@@ -738,7 +738,8 @@ function saveEditTx() {
   const t = state.transactions.find(x => x.id === editingTxId);
   if (!t) return;
   const name = document.getElementById('edit-tx-name').value.trim();
-  const amount = parseFloat(document.getElementById('edit-tx-amount').value);
+  const amount = calculateAmountInput(document.getElementById('edit-tx-amount'));
+  if(!Number.isFinite(amount))return;
   const date = document.getElementById('edit-tx-date').value;
   if (!name || !amount || !date) { alert('กรุณากรอกข้อมูลให้ครบ'); return; }
   const d = new Date(date);
@@ -957,7 +958,8 @@ function selectCCAction(a) {
 /* ---- CRUD ---- */
 function addTransaction() {
   const name = document.getElementById('tx-name').value.trim();
-  const amount = parseFloat(document.getElementById('tx-amount').value);
+  const amount = calculateAmountInput(document.getElementById('tx-amount'));
+  if(!Number.isFinite(amount))return;
   const date = document.getElementById('tx-date').value;
   const category = document.getElementById('tx-category').value;
   const note = document.getElementById('tx-note').value.trim();
@@ -1552,6 +1554,41 @@ function render() {
   document.getElementById('fb-config-input').value = JSON.stringify(config, null, 2);
   initFirebase(config);
 })();
+</script>
+<script>
+
+function calculateMoneyExpression(source) {
+  const input=String(source).replace(/×/g,'*').replace(/[÷]/g,'/').replace(/[−–]/g,'-').replace(/\s/g,'');
+  if(!input || input.length>200 || /[^0-9.+*/()\-]/.test(input))throw Error('กรุณาใส่ตัวเลขและเครื่องหมาย + - × ÷ หรือวงเล็บ');
+  let pos=0;
+  function primary(){
+    if(input[pos]==='+'){pos++;return primary();}
+    if(input[pos]==='-'){pos++;return -primary();}
+    if(input[pos]==='('){pos++;const n=sum();if(input[pos++]!==')')throw Error('วงเล็บไม่ครบ');return n;}
+    const match=/^(?:\d+(?:\.\d*)?|\.\d+)/.exec(input.slice(pos));
+    if(!match)throw Error('สูตรคำนวณไม่ถูกต้อง');pos+=match[0].length;return Number(match[0]);
+  }
+  function product(){let n=primary();while(input[pos]==='*'||input[pos]==='/'){const op=input[pos++],v=primary();if(op==='/'&&v===0)throw Error('หารด้วยศูนย์ไม่ได้');n=op==='*'?n*v:n/v;}return n;}
+  function sum(){let n=product();while(input[pos]==='+'||input[pos]==='-'){const op=input[pos++],v=product();n=op==='+'?n+v:n-v;}return n;}
+  const result=sum();
+  if(pos!==input.length||!Number.isFinite(result)||Math.abs(result)>Number.MAX_SAFE_INTEGER/100)throw Error('สูตรไม่ถูกต้องหรือยอดสูงเกินไป');
+  return Math.round((result+Number.EPSILON)*100)/100;
+}
+function calculateAmountInput(field) {
+  try {
+    const result=calculateMoneyExpression(field.value);
+    if(result<=0)throw Error('จำนวนเงินต้องมากกว่า 0');
+    field.value=String(result);field.setCustomValidity('');return result;
+  }catch(err){field.setCustomValidity(err.message);field.reportValidity();return NaN;}
+}
+for(const id of ['tx-amount','edit-tx-amount']){
+  const field=document.getElementById(id);if(!field)continue;
+  field.type='text';field.inputMode='text';field.setAttribute('enterkeyhint','done');
+  field.placeholder='จำนวนเงิน เช่น 22+25 (Enter คำนวณ)';
+  field.addEventListener('input',()=>field.setCustomValidity(''));
+  field.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();event.stopPropagation();calculateAmountInput(field);}});
+}
+
 </script>
 </body>
 </html>
