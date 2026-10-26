@@ -727,6 +727,7 @@ function editTransaction(id) {
   const t = state.transactions.find(x => x.id === id);
   if (!t) return;
   if(guardMonthlyRecord(t))return;
+  try {const origin=financeOrigin(t);if(origin){if(origin.kind==='monthly'){alert('กรุณาแก้รายการนี้ที่หน้ารายเดือน');return;}return origin.kind==='cc'?editCCTx(origin.record.id):editLoanTx(origin.record.id);}}catch(err){alert(err.message);return;}
   editingTxId = id;
   editingTxType = t.type;
   document.getElementById('edit-tx-name').value = t.name;
@@ -749,6 +750,14 @@ async function saveEditTx() {
   if(!Number.isFinite(amount))return;
   const date = document.getElementById('edit-tx-date').value;
   if (!name || !amount || !date) { alert('กรุณากรอกข้อมูลให้ครบ'); return; }
+  if(guardMonthlyRecord(t))return;
+  const origin=financeOrigin(t);
+  if(origin){
+    if(origin.kind==='monthly')throw Error('กรุณาแก้รายการนี้ที่หน้ารายเดือน');
+    if(editingTxType!=='expense')throw Error('การชำระหนี้ต้องเป็นรายจ่าย');
+    updateFinanceRecord(origin.kind,origin.record,amount,financeDate(date),document.getElementById('edit-tx-note').value.trim());
+    await saveData();closeModal('modal-tx');render();return;
+  }
   const d = new Date(date);
   t.name = name; t.amount = amount; t.date = date;
   t.category = document.getElementById('edit-tx-category').value;
@@ -772,17 +781,10 @@ function editCreditCard(id) {
   openModal('modal-cc');
 }
 async function saveEditCC() {
-  const c = state.creditCards.find(x => x.id === editingCCId);
-  if (!c) return;
-  const name = document.getElementById('edit-cc-name').value.trim();
-  if (!name) { alert('กรุณากรอกชื่อบัตร'); return; }
-  c.name = name;
-  c.limit = parseFloat(document.getElementById('edit-cc-limit').value) || 0;
-  c.debt = parseFloat(document.getElementById('edit-cc-debt').value) || 0;
-  c.cutday = parseInt(document.getElementById('edit-cc-cutday').value) || 0;
-  c.dueday = parseInt(document.getElementById('edit-cc-dueday').value) || 0;
-  c.limitGroup = document.getElementById('edit-cc-group').value || '';
-  await saveData(); closeModal('modal-cc'); render();
+  const c=state.creditCards.find(x=>x.id===editingCCId);if(!c)return;
+  const name=document.getElementById('edit-cc-name').value.trim();if(!name)throw Error('กรุณากรอกชื่อบัตร');
+  const next={name,limit:financeMoney(document.getElementById('edit-cc-limit').value,true),debt:financeMoney(document.getElementById('edit-cc-debt').value,true),cutday:financeDay(document.getElementById('edit-cc-cutday').value),dueday:financeDay(document.getElementById('edit-cc-dueday').value),limitGroup:document.getElementById('edit-cc-group').value||''};
+  Object.assign(c,next);await saveData();closeModal('modal-cc');render();
 }
 
 /* ---- Edit Monthly ---- */
@@ -802,17 +804,11 @@ function editMonthlyExpense(id) {
 }
 async function saveEditMo() {
   const e=state.monthlyExpenses.find(x=>x.id===editingMoId);if(!e)return;
-  const name=document.getElementById('edit-mo-name').value.trim();
-  const amount=Number(document.getElementById('edit-mo-amount').value);
-  const dueday=Number(document.getElementById('edit-mo-dueday').value);
-  if(!name||!Number.isFinite(amount)||amount<=0||!Number.isInteger(dueday)||dueday<1||dueday>31){alert('กรุณากรอกชื่อ ยอดมากกว่า 0 และวันที่ 1–31');return;}
-  try {
-    const link=monthlySelection(document.getElementById('edit-mo-category').value),key=monthlyKey(e),paid=!!state.monthlyStatus[key];
-    assertMonthlyReversible(e,key);
-    if(paid)undoMonthly(e,key);
-    Object.assign(e,{name,amount,dueday},link);
-    if(paid)applyMonthly(e,key);
-  }catch(err){alert(err.message);return;}
+  const name=document.getElementById('edit-mo-name').value.trim();if(!name)throw Error('กรุณากรอกชื่อรายการ');
+  const amount=financeMoney(document.getElementById('edit-mo-amount').value),dueday=financeDay(document.getElementById('edit-mo-dueday').value)||1;
+  const link=monthlySelection(document.getElementById('edit-mo-category').value),key=monthlyKey(e),paid=!!state.monthlyStatus[key];assertMonthlyReversible(e,key);
+  if(paid&&link.targetType){const account=financeAccount(link.targetType,link.targetId),receipt=monthlyReceipt(e,key);let available=financeCents(account.debt||0,true);if(receipt.targetType===link.targetType&&String(receipt.targetId)===String(link.targetId))available+=financeCents(receipt.debtApplied,true);assertPaymentWithinDebt(financeCents(amount),available);}
+  if(paid)undoMonthly(e,key);Object.assign(e,{name,amount,dueday},link);if(paid)applyMonthly(e,key);
   await saveData();closeModal('modal-mo');render();
 }
 
@@ -1011,6 +1007,7 @@ async function performBudgetMutation(action) {
     setSyncStatus('⬤ บันทึกไม่สำเร็จ','sync-err');
     alert(err.message||'บันทึกไม่สำเร็จ กรุณาตรวจการเชื่อมต่อ');return false;
   } finally {
+    if(syncState.baseline && !syncEqual(captureBudget(),Object.fromEntries(BUDGET_KEYS.map(k=>[k,syncState.baseline[k]||{}]))))adoptBudget(syncState.baseline,false);
     syncState.busy=false;syncState.activeBase=null;
     if(syncState.pending){adoptBudget(syncState.pending);syncState.pending=null;}
     updateSyncControls();
@@ -1114,6 +1111,125 @@ function selectCCAction(a) {
   document.querySelectorAll('#cc-action-chips .chip').forEach(c => c.classList.toggle('selected', c.dataset.action === a));
 }
 
+/* ---- Shared payment rules ---- */
+let financeLastId=0;
+function financeMoney(value,allowZero=false) {
+  const n=Number(value),cents=Math.round(n*100);
+  if(!Number.isFinite(n)||!Number.isSafeInteger(cents)||n<0||(!allowZero&&cents===0)||Math.abs(n*100-cents)>0.000001)throw Error(allowZero?'จำนวนเงินต้องไม่ติดลบ และมีทศนิยมไม่เกิน 2 ตำแหน่ง':'จำนวนเงินต้องมากกว่า 0 และมีทศนิยมไม่เกิน 2 ตำแหน่ง');
+  return cents/100;
+}
+function financeCents(value,allowZero=false) {return Math.round(financeMoney(value,allowZero)*100);}
+function financeDay(value) {if(value===''||value===null||value===undefined)return 0;const n=Number(value);if(!Number.isInteger(n)||n<1||n>31)throw Error('วันต้องเป็นจำนวนเต็ม 1–31');return n;}
+function financeDate(value) {
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(value||''))throw Error('กรุณาระบุวันที่ให้ถูกต้อง');
+  const [y,m,d]=value.split('-').map(Number),date=new Date(Date.UTC(y,m-1,d));
+  if(date.getUTCFullYear()!==y||date.getUTCMonth()!==m-1||date.getUTCDate()!==d)throw Error('วันที่ไม่ถูกต้อง');
+  return value;
+}
+function newFinanceId() {
+  const ids=new Set([...state.transactions,...state.ccTransactions,...state.loanTransactions].map(x=>String(x.id)));
+  let id=Math.max(Date.now()*1000+Math.floor(Math.random()*1000),financeLastId+2);
+  while(ids.has(String(id))||ids.has(String(id+1)))id+=2;
+  financeLastId=id;return id;
+}
+function financeHistory(kind) {if(kind!=='cc'&&kind!=='ln')throw Error('ประเภทบัญชีที่เชื่อมไว้ไม่ถูกต้อง');return kind==='cc'?state.ccTransactions:state.loanTransactions;}
+function financeAccount(kind,id) {
+  if(kind!=='cc'&&kind!=='ln')throw Error('ประเภทบัญชีที่เชื่อมไว้ไม่ถูกต้อง');
+  const account=(kind==='cc'?state.creditCards:state.loans).find(x=>String(x.id)===String(id));
+  if(!account)throw Error('ไม่พบบัตรหรือสินเชื่อที่ผูกอยู่ กรุณาตรวจข้อมูลก่อนปรับยอด');return account;
+}
+function financeLinkedExpense(kind,record) {
+  const key=kind==='cc'?'ccTxId':'loanTxId';
+  const matches=state.transactions.filter(t=>(record.linkedTxId!==undefined&&String(t.id)===String(record.linkedTxId))||(t[key]!==undefined&&String(t[key])===String(record.id)));
+  if(matches.length>1)throw Error('พบรายจ่ายเชื่อมซ้ำ กรุณาตรวจยอดก่อนแก้รายการนี้');
+  if(!matches.length&&(record.linkedTxId!==undefined||record.ledgerVersion===2))throw Error('ไม่พบรายจ่ายที่เชื่อมไว้ กรุณาตรวจข้อมูลก่อนปรับยอด');
+  const linked=matches[0]||null;
+  if(linked && (linked.type!=='expense'||financeCents(linked.amount)!==financeCents(record.amount)))throw Error('ยอดรายจ่ายไม่ตรงกับประวัติชำระ กรุณาตรวจยอดก่อนแก้รายการนี้');
+  if(linked && (linked.autoFromMonthly||linked.monthlyPaymentKey))throw Error('กรุณาปรับรายการที่เชื่อมนี้จากหน้ารายเดือน');
+  return linked;
+}
+function financeOrigin(tx) {
+  if(tx.autoFromMonthly||tx.monthlyPaymentKey)return {kind:'monthly'};
+  const matches=[];
+  for(const kind of ['cc','ln']){
+    const key=kind==='cc'?'ccTxId':'loanTxId';
+    for(const record of financeHistory(kind))if((record.linkedTxId!==undefined&&String(record.linkedTxId)===String(tx.id))||(tx[key]!==undefined&&String(record.id)===String(tx[key])))matches.push({kind,record});
+  }
+  if(matches.length>1)throw Error('รายจ่ายนี้เชื่อมหลายต้นทาง กรุณาตรวจข้อมูลก่อนแก้ไข');
+  if(matches[0]&&matches[0].record.monthlyPaymentKey)return {kind:'monthly'};
+  if(matches.length){if(matches[0].kind==='cc'&&matches[0].record.type!=='payment')throw Error('รายจ่ายเชื่อมกับประวัติที่ไม่ใช่การชำระ กรุณาตรวจข้อมูลก่อน');return matches[0];}
+  if(tx.autoFromCC||tx.autoFromLoan||tx.ccTxId!==undefined||tx.loanTxId!==undefined)throw Error('ไม่พบประวัติชำระต้นทาง จึงยังแก้หรือลบรายจ่ายนี้แยกไม่ได้');
+  return null;
+}
+function financeApplied(record) {
+  if(record.debtApplied===undefined)throw Error('รายการชำระเก่านี้ไม่มีหลักฐานยอดลดหนี้จริง จึงยังแก้ยอดหรือยกเลิกไม่ได้ กรุณาตรวจยอดก่อน ระบบจะไม่คืนหนี้โดยเดา');
+  const applied=financeCents(record.debtApplied,true);
+  if(applied>financeCents(record.amount))throw Error('ข้อมูลยอดลดหนี้ไม่ตรงกับยอดชำระ กรุณาตรวจรายการนี้');return applied;
+}
+function assertPaymentWithinDebt(amount,available) {
+  if(amount>available)throw Error('ยอดชำระเกินหนี้คงค้าง '+fmt(available/100)+' กรุณาตรวจยอดหนี้หรือดอกเบี้ยก่อน แอปยังไม่รองรับเครดิตส่วนเกิน');
+}
+function createFinanceRecord(kind,account,amount,type,date,note,monthly=null) {
+  const cents=financeCents(amount),before=financeCents(account.debt||0,true);financeDate(date);
+  if(type!=='payment'&&type!=='charge')throw Error('ประเภทรายการไม่ถูกต้อง');
+  if(kind==='ln'&&type!=='payment')throw Error('ประเภทรายการสินเชื่อไม่ถูกต้อง');
+  if(type==='charge'&&account.archived)throw Error('บัตรนี้ปิดใช้งานอยู่ กรุณาเปิดใช้งานก่อนเพิ่มยอดใช้จ่าย');
+  if(type==='payment')assertPaymentWithinDebt(cents,before);
+  const after=type==='payment'?before-cents:before+cents;
+  if(!Number.isSafeInteger(after))throw Error('จำนวนเงินสูงเกินไป');
+  const id=newFinanceId(),record={id,amount:cents/100,date,note,type,ledgerVersion:2,debtBefore:before/100,debtAfter:after/100};
+  if(kind==='cc')Object.assign(record,{cardId:account.id,cardName:account.name});else Object.assign(record,{loanId:account.id,loanName:account.name});
+  let expense=null;
+  if(type==='payment'){
+    record.debtApplied=cents/100;record.linkedTxId=id+1;
+    expense={id:id+1,type:'expense',amount:cents/100,date,monthKey:date.slice(0,7),name:(kind==='cc'?'ชำระบัตร: ':'ชำระ: ')+account.name+(note?' ('+note+')':''),category:kind==='cc'?'บัตรเครดิต':'ผ่อน/สินเชื่อ'};
+    Object.assign(expense,kind==='cc'?{autoFromCC:true,ccTxId:id}:{autoFromLoan:true,loanTxId:id});
+    if(monthly){
+      delete expense.autoFromCC;delete expense.autoFromLoan;delete expense.ccTxId;delete expense.loanTxId;
+      Object.assign(expense,{name:monthly.name,category:monthly.category,autoFromMonthly:true,monthlyPaymentKey:monthly.key,monthlyExpenseId:monthly.id});
+      Object.assign(record,{monthlyPaymentKey:monthly.key,note:'ชำระจากรายเดือน: '+monthly.name});
+    }
+  }
+  account.debt=after/100;financeHistory(kind).unshift(record);if(expense)state.transactions.push(expense);
+  return {record,expense};
+}
+function updateFinanceRecord(kind,record,amount,date,note) {
+  if(record.monthlyPaymentKey)throw Error('รายการนี้เชื่อมกับรายเดือน กรุณาแก้ที่หน้ารายเดือน');
+  const cents=financeCents(amount),old=financeCents(record.amount),account=financeAccount(kind,kind==='cc'?record.cardId:record.loanId),debt=financeCents(account.debt||0,true);
+  financeDate(date);const payment=kind==='ln'||record.type==='payment';
+  if(!payment&&record.type!=='charge')throw Error('ประเภทรายการไม่ถูกต้อง');
+  const linked=payment?financeLinkedExpense(kind,record):null;
+  let nextDebt=debt,applied=null;
+  if(cents!==old){
+    if(payment){const available=debt+financeApplied(record);if(!Number.isSafeInteger(available))throw Error('จำนวนเงินสูงเกินไป');assertPaymentWithinDebt(cents,available);nextDebt=available-cents;applied=cents;}
+    else {if(account.archived&&cents>old)throw Error('บัตรปิดใช้งานแล้ว จึงเพิ่มยอดใช้จ่ายไม่ได้');nextDebt=debt+cents-old;if(nextDebt<0)throw Error('รายการใช้จ่ายนี้มีการชำระแล้ว กรุณาตรวจหรือย้อนรายการชำระที่เกี่ยวข้องก่อนลดหรือลบยอดใช้จ่าย');}
+  }
+  if(!Number.isSafeInteger(nextDebt))throw Error('จำนวนเงินสูงเกินไป');
+  account.debt=nextDebt/100;record.amount=cents/100;record.date=date;record.note=note;
+  if(kind==='cc')record.cardName=account.name;else record.loanName=account.name;
+  if(applied!==null){record.debtApplied=applied/100;record.ledgerVersion=2;record.debtBefore=(nextDebt+applied)/100;record.debtAfter=nextDebt/100;}
+  if(linked)Object.assign(linked,{type:'expense',amount:cents/100,date,monthKey:date.slice(0,7),name:(kind==='cc'?'ชำระบัตร: ':'ชำระ: ')+account.name+(note?' ('+note+')':''),category:kind==='cc'?'บัตรเครดิต':'ผ่อน/สินเชื่อ'});
+}
+function removeFinanceRecord(kind,record) {
+  if(record.monthlyPaymentKey)throw Error('รายการนี้เชื่อมกับรายเดือน กรุณายกเลิกชำระที่หน้ารายเดือน');
+  const account=financeAccount(kind,kind==='cc'?record.cardId:record.loanId),debt=financeCents(account.debt||0,true),payment=kind==='ln'||record.type==='payment';
+  let nextDebt,linked=null;
+  if(payment){const applied=financeApplied(record);linked=financeLinkedExpense(kind,record);nextDebt=debt+applied;}
+  else {if(record.type!=='charge')throw Error('ประเภทรายการไม่ถูกต้อง');nextDebt=debt-financeCents(record.amount);if(nextDebt<0)throw Error('ยอดใช้จ่ายนี้มีการชำระแล้ว กรุณาตรวจหรือย้อนรายการชำระที่เกี่ยวข้องก่อนลบ');}
+  if(!Number.isSafeInteger(nextDebt))throw Error('จำนวนเงินสูงเกินไป');
+  account.debt=nextDebt/100;
+  if(linked)state.transactions=state.transactions.filter(t=>String(t.id)!==String(linked.id));
+  if(kind==='cc')state.ccTransactions=state.ccTransactions.filter(t=>String(t.id)!==String(record.id));else state.loanTransactions=state.loanTransactions.filter(t=>String(t.id)!==String(record.id));
+}
+async function editFinancePrompt(kind,id) {
+  const record=financeHistory(kind).find(t=>String(t.id)===String(id));if(!record)return;
+  if(guardMonthlyRecord(record))return;
+  const raw=prompt('แก้ไขจำนวนเงิน:',record.amount);if(raw===null)return;
+  const amount=financeMoney(raw),note=prompt('แก้ไขหมายเหตุ:',record.note||'');if(note===null)return;
+  const date=prompt('วันที่รายการ (YYYY-MM-DD):',record.date);if(date===null)return;
+  updateFinanceRecord(kind,record,amount,financeDate(date),note.trim());await saveData();render();
+}
+
 /* ---- CRUD ---- */
 async function addTransaction() {
   const name = document.getElementById('tx-name').value.trim();
@@ -1131,18 +1247,21 @@ async function addTransaction() {
 }
 
 async function deleteTransaction(id) {
-  if(guardMonthlyRecord(state.transactions.find(t=>t.id===id)))return;
-  if (!confirm('ลบรายการนี้?')) return;
-  state.transactions = state.transactions.filter(t => t.id !== id);
-  await saveData(); render();
+  const t=state.transactions.find(x=>String(x.id)===String(id));if(!t)return;
+  if(guardMonthlyRecord(t))return;
+  const origin=financeOrigin(t);
+  if(origin&&origin.kind==='monthly')throw Error('กรุณายกเลิกชำระที่หน้ารายเดือน');
+  if(!confirm(origin?'ยกเลิกการชำระนี้ พร้อมคืนยอดหนี้และเงินคงเหลือ?':'ลบรายการนี้?'))return;
+  if(origin)removeFinanceRecord(origin.kind,origin.record);else state.transactions=state.transactions.filter(x=>String(x.id)!==String(id));
+  await saveData();render();
 }
 
 async function addCreditCard() {
   const name = document.getElementById('cc-name').value.trim();
-  const limit = parseFloat(document.getElementById('cc-limit').value) || 0;
-  const debt = parseFloat(document.getElementById('cc-debt-input').value) || 0;
-  const dueday = parseInt(document.getElementById('cc-dueday').value) || 0;
-  const cutday = parseInt(document.getElementById('cc-cutday').value) || 0;
+  const limit = financeMoney(document.getElementById('cc-limit').value,true);
+  const debt = financeMoney(document.getElementById('cc-debt-input').value,true);
+  const dueday = financeDay(document.getElementById('cc-dueday').value);
+  const cutday = financeDay(document.getElementById('cc-cutday').value);
   const limitGroup = document.getElementById('cc-group-select').value || '';
   if (!name) { alert('กรุณากรอกชื่อบัตร'); return; }
   state.creditCards.push({ id: Date.now(), name, limit, debt, cutday, dueday, limitGroup });
@@ -1154,44 +1273,24 @@ async function addCreditCard() {
 }
 
 async function deleteCreditCard(id) {
-  if (!confirm('ลบบัตรนี้?')) return;
-  state.creditCards = state.creditCards.filter(c => c.id !== id);
-  state.ccTransactions = state.ccTransactions.filter(t => t.cardId !== id);
-  await saveData(); render();
+  const account=state.creditCards.find(x=>String(x.id)===String(id));if(!account)return;
+  if(!confirm(account.archived?'เปิดใช้งานบัตรนี้อีกครั้ง?':'ปิดใช้งานบัตรนี้? ยอดหนี้ ประวัติ และรายการที่เชื่อมไว้จะยังอยู่ครบ'))return;
+  account.archived=!account.archived;await saveData();render();
 }
 
 function openCCPayment(cardId) {
-  const sel = document.getElementById('cc-select-card');
-  sel.innerHTML = state.creditCards.map(c => `<option value="${c.id}" ${c.id===cardId?'selected':''}>${c.name}</option>`).join('');
-  if (!cardId && state.creditCards.length) sel.value = state.creditCards[0].id;
-  document.getElementById('cc-payment-form').style.display = 'block';
-  document.getElementById('cc-payment-form').scrollIntoView({behavior:'smooth'});
+  const cards=state.creditCards.filter(c=>!c.archived||Number(c.debt)>0);if(!cards.length){alert('ไม่มีบัตรที่เปิดใช้งานหรือหนี้คงค้างให้ชำระ');return;}
+  if(cardId&&!cards.some(c=>String(c.id)===String(cardId))){alert('บัตรนี้ปิดใช้งานแล้วและไม่มีหนี้ค้าง');return;}
+  const sel=document.getElementById('cc-select-card');sel.replaceChildren(...cards.map(c=>new Option(c.name+(c.archived?' (ปิดใช้งาน — ชำระหนี้ค้าง)':''),c.id)));
+  if(cardId&&cards.some(c=>String(c.id)===String(cardId)))sel.value=String(cardId);
+  selectCCAction('payment');document.getElementById('cc-payment-form').style.display='block';document.getElementById('cc-payment-form').scrollIntoView({behavior:'smooth'});
 }
 
 async function saveCCTransaction() {
-  const cardId = parseInt(document.getElementById('cc-select-card').value);
-  const amount = parseFloat(document.getElementById('cc-pay-amount').value);
-  const date = document.getElementById('cc-pay-date').value;
-  const note = document.getElementById('cc-pay-note').value.trim();
-  if (!cardId || !amount || !date) { alert('กรุณากรอกข้อมูลให้ครบ'); return; }
-  const card = state.creditCards.find(c => c.id === cardId);
-  if (!card) return;
-  const isPayment = state.selectedCCAction === 'payment';
-  card.debt = Math.max(0, (card.debt || 0) + (isPayment ? -amount : amount));
-  const txId = Date.now();
-  const ccTx = { id: txId, cardId, cardName: card.name, amount, date, note, type: state.selectedCCAction };
-  if (isPayment) {
-    const [y,m] = date.split('-');
-    const mKey = y + '-' + m;
-    state.transactions.push({ id: txId + 1, type: 'expense', amount, name: 'ชำระบัตร: ' + card.name + (note?' ('+note+')':''), date, monthKey: mKey, category: 'บัตรเครดิต', autoFromCC: true, ccTxId: txId });
-    ccTx.linkedTxId = txId + 1;
-  }
-  state.ccTransactions.unshift(ccTx);
-  await saveData();
-  document.getElementById('cc-pay-amount').value = '';
-  document.getElementById('cc-pay-note').value = '';
-  document.getElementById('cc-payment-form').style.display = 'none';
-  render();
+  const card=financeAccount('cc',document.getElementById('cc-select-card').value);
+  const amount=financeMoney(document.getElementById('cc-pay-amount').value),date=financeDate(document.getElementById('cc-pay-date').value),note=document.getElementById('cc-pay-note').value.trim();
+  createFinanceRecord('cc',card,amount,state.selectedCCAction,date,note);
+  await saveData();document.getElementById('cc-pay-amount').value='';document.getElementById('cc-pay-note').value='';document.getElementById('cc-payment-form').style.display='none';render();
 }
 
 function openCCHistory(cardId) {
@@ -1220,33 +1319,13 @@ function openCCHistory(cardId) {
 }
 
 async function deleteCCTx(id) {
-  const t = state.ccTransactions.find(x => x.id === id);
-  if (!t) return;
-  if(guardMonthlyRecord(t))return;
-  if (!confirm('ลบรายการนี้?')) return;
-  const card = state.creditCards.find(c => c.id === t.cardId);
-  if (card) card.debt = Math.max(0, (card.debt || 0) + (t.type === 'payment' ? t.amount : -t.amount));
-  if (t.linkedTxId) state.transactions = state.transactions.filter(x => x.id !== t.linkedTxId);
-  state.ccTransactions = state.ccTransactions.filter(x => x.id !== id);
-  await saveData(); render();
+  const record=financeHistory('cc').find(x=>String(x.id)===String(id));if(!record)return;
+  if(guardMonthlyRecord(record))return;
+  if(!confirm('ลบรายการนี้ และย้อนยอดหนี้กับรายจ่ายที่เชื่อมไว้พร้อมกัน?'))return;
+  removeFinanceRecord('cc',record);await saveData();render();
 }
 
-async function editCCTx(id) {
-  const t = state.ccTransactions.find(x => x.id === id);
-  if (!t) return;
-  if(guardMonthlyRecord(t))return;
-  const newAmount = parseFloat(prompt('แก้ไขจำนวนเงิน:', t.amount));
-  if (isNaN(newAmount) || newAmount <= 0) return;
-  const newNote = prompt('แก้ไขหมายเหตุ:', t.note || '') ?? t.note;
-  const diff = newAmount - t.amount;
-  const card = state.creditCards.find(c => c.id === t.cardId);
-  if (card) card.debt = Math.max(0, (card.debt || 0) + (t.type === 'payment' ? -diff : diff));
-  t.amount = newAmount; t.note = newNote;
-  if (t.linkedTxId) {
-    const linked = state.transactions.find(x => x.id === t.linkedTxId);
-    if (linked) { linked.amount = newAmount; linked.name = 'ชำระบัตร: ' + t.cardName + (newNote?' ('+newNote+')':''); }
-  }
-  await saveData(); render();
+async function editCCTx(id) {return await editFinancePrompt('cc',id);
 }
 
 /* ---- Loans ---- */
@@ -1254,9 +1333,9 @@ const loanTypeLabel = { bnpl: 'BNPL', cash: 'กดเงินสด/สิน�
 
 async function addLoan() {
   const name = document.getElementById('ln-name').value.trim();
-  const debt = parseFloat(document.getElementById('ln-debt').value) || 0;
-  const monthly = parseFloat(document.getElementById('ln-monthly').value) || 0;
-  const dueday = parseInt(document.getElementById('ln-dueday').value) || 0;
+  const debt = financeMoney(document.getElementById('ln-debt').value,true);
+  const monthly = financeMoney(document.getElementById('ln-monthly').value,true);
+  const dueday = financeDay(document.getElementById('ln-dueday').value);
   const type = document.getElementById('ln-type').value;
   const note = document.getElementById('ln-note').value.trim();
   if (!name) { alert('กรุณากรอกชื่อ'); return; }
@@ -1268,10 +1347,9 @@ async function addLoan() {
 }
 
 async function deleteLoan(id) {
-  if (!confirm('ลบรายการนี้?')) return;
-  state.loans = state.loans.filter(l => l.id !== id);
-  state.loanTransactions = state.loanTransactions.filter(t => t.loanId !== id);
-  await saveData(); render();
+  const account=state.loans.find(x=>String(x.id)===String(id));if(!account)return;
+  if(!confirm(account.archived?'เปิดใช้งานสินเชื่อนี้อีกครั้ง?':'ปิดใช้งานสินเชื่อนี้? ยอดหนี้ ประวัติ และรายการที่เชื่อมไว้จะยังอยู่ครบ'))return;
+  account.archived=!account.archived;await saveData();render();
 }
 
 function editLoan(id) {
@@ -1288,75 +1366,35 @@ function editLoan(id) {
 }
 
 async function saveEditLoan() {
-  const l = state.loans.find(x => x.id === editingLnId);
-  if (!l) return;
-  const name = document.getElementById('edit-ln-name').value.trim();
-  if (!name) { alert('กรุณากรอกชื่อ'); return; }
-  l.name = name;
-  l.debt = parseFloat(document.getElementById('edit-ln-debt').value) || 0;
-  l.monthly = parseFloat(document.getElementById('edit-ln-monthly').value) || 0;
-  l.dueday = parseInt(document.getElementById('edit-ln-dueday').value) || 0;
-  l.type = document.getElementById('edit-ln-type').value;
-  l.note = document.getElementById('edit-ln-note').value.trim();
-  await saveData(); closeModal('modal-ln'); render();
+  const l=state.loans.find(x=>x.id===editingLnId);if(!l)return;
+  const name=document.getElementById('edit-ln-name').value.trim();if(!name)throw Error('กรุณากรอกชื่อสินเชื่อ');
+  const next={name,debt:financeMoney(document.getElementById('edit-ln-debt').value,true),monthly:financeMoney(document.getElementById('edit-ln-monthly').value,true),dueday:financeDay(document.getElementById('edit-ln-dueday').value),type:document.getElementById('edit-ln-type').value,note:document.getElementById('edit-ln-note').value.trim()};
+  Object.assign(l,next);await saveData();closeModal('modal-ln');render();
 }
 
 function openLoanPayment(loanId) {
-  const sel = document.getElementById('ln-select');
-  sel.innerHTML = state.loans.map(l => `<option value="${l.id}" ${l.id===loanId?'selected':''}>${l.name}</option>`).join('');
-  document.getElementById('loan-payment-form').style.display = 'block';
-  document.getElementById('loan-payment-form').scrollIntoView({behavior:'smooth'});
+  const loans=state.loans.filter(l=>!l.archived||Number(l.debt)>0);if(!loans.length){alert('ไม่มีสินเชื่อที่เปิดใช้งานหรือหนี้ค้างให้ชำระ');return;}
+  if(loanId&&!loans.some(l=>String(l.id)===String(loanId))){alert('สินเชื่อนี้ปิดใช้งานแล้วและไม่มีหนี้ค้าง');return;}
+  const sel=document.getElementById('ln-select');sel.replaceChildren(...loans.map(l=>new Option(l.name+(l.archived?' (ปิดใช้งาน — ชำระหนี้ค้าง)':''),l.id)));
+  if(loanId&&loans.some(l=>String(l.id)===String(loanId)))sel.value=String(loanId);
+  document.getElementById('loan-payment-form').style.display='block';document.getElementById('loan-payment-form').scrollIntoView({behavior:'smooth'});
 }
 
 async function saveLoanPayment() {
-  const loanId = parseInt(document.getElementById('ln-select').value);
-  const amount = parseFloat(document.getElementById('ln-pay-amount').value);
-  const date = document.getElementById('ln-pay-date').value;
-  const note = document.getElementById('ln-pay-note').value.trim();
-  if (!loanId || !amount || !date) { alert('กรุณากรอกข้อมูลให้ครบ'); return; }
-  const loan = state.loans.find(l => l.id === loanId);
-  if (!loan) return;
-  loan.debt = Math.max(0, (loan.debt || 0) - amount);
-  const txId = Date.now();
-  const lnTx = { id: txId, loanId, loanName: loan.name, amount, date, note };
-  const [y,m] = date.split('-');
-  state.transactions.push({ id: txId+1, type: 'expense', amount, name: 'ชำระ: '+loan.name+(note?' ('+note+')':''), date, monthKey: y+'-'+m, category: 'ผ่อน/สินเชื่อ', autoFromLoan: true, loanTxId: txId });
-  lnTx.linkedTxId = txId+1;
-  state.loanTransactions.unshift(lnTx);
-  await saveData();
-  document.getElementById('ln-pay-amount').value = '';
-  document.getElementById('ln-pay-note').value = '';
-  document.getElementById('loan-payment-form').style.display = 'none';
-  render();
+  const loan=financeAccount('ln',document.getElementById('ln-select').value);
+  const amount=financeMoney(document.getElementById('ln-pay-amount').value),date=financeDate(document.getElementById('ln-pay-date').value),note=document.getElementById('ln-pay-note').value.trim();
+  createFinanceRecord('ln',loan,amount,'payment',date,note);
+  await saveData();document.getElementById('ln-pay-amount').value='';document.getElementById('ln-pay-note').value='';document.getElementById('loan-payment-form').style.display='none';render();
 }
 
 async function deleteLoanTx(id) {
-  const t = state.loanTransactions.find(x => x.id === id);
-  if (!t || guardMonthlyRecord(t)) return;
-  if (!confirm('ลบรายการนี้?')) return;
-  const loan = state.loans.find(l => l.id === t.loanId);
-  if (loan) loan.debt = (loan.debt || 0) + t.amount;
-  if (t.linkedTxId) state.transactions = state.transactions.filter(x => x.id !== t.linkedTxId);
-  state.loanTransactions = state.loanTransactions.filter(x => x.id !== id);
-  await saveData(); render();
+  const record=financeHistory('ln').find(x=>String(x.id)===String(id));if(!record)return;
+  if(guardMonthlyRecord(record))return;
+  if(!confirm('ลบรายการนี้ และย้อนยอดหนี้กับรายจ่ายที่เชื่อมไว้พร้อมกัน?'))return;
+  removeFinanceRecord('ln',record);await saveData();render();
 }
 
-async function editLoanTx(id) {
-  const t = state.loanTransactions.find(x => x.id === id);
-  if (!t) return;
-  if(guardMonthlyRecord(t))return;
-  const newAmount = parseFloat(prompt('แก้ไขจำนวนเงิน:', t.amount));
-  if (isNaN(newAmount) || newAmount <= 0) return;
-  const newNote = prompt('แก้ไขหมายเหตุ:', t.note || '') ?? t.note;
-  const diff = newAmount - t.amount;
-  const loan = state.loans.find(l => l.id === t.loanId);
-  if (loan) loan.debt = Math.max(0, (loan.debt || 0) - diff);
-  t.amount = newAmount; t.note = newNote;
-  if (t.linkedTxId) {
-    const linked = state.transactions.find(x => x.id === t.linkedTxId);
-    if (linked) { linked.amount = newAmount; linked.name = 'ชำระ: '+t.loanName+(newNote?' ('+newNote+')':''); }
-  }
-  await saveData(); render();
+async function editLoanTx(id) {return await editFinancePrompt('ln',id);
 }
 
 function monthlySelection(value) {
@@ -1383,34 +1421,34 @@ function assertMonthlyReversible(e,key) {
   if (state.monthlyStatus[key] && !monthlyReceipt(e,key)) throw Error('รายการนี้จ่ายด้วยระบบเดิม ยังไม่มีหลักฐานการหักหนี้ กรุณาตรวจยอดก่อนปรับรายการ ระบบจะไม่คืนหรือหักหนี้ย้อนหลังโดยเดา');
   const r=monthlyReceipt(e,key);
   if(r && r.targetType && !(r.targetType==='cc'?state.creditCards:state.loans).some(x=>String(x.id)===String(r.targetId))) throw Error('ไม่พบบัตรหรือสินเชื่อเดิม จึงยังย้อนรายการนี้ไม่ได้');
+  if(r){
+    if(financeCents(r.debtApplied,true)>financeCents(r.amount))throw Error('ยอดลดหนี้เดิมไม่ถูกต้อง กรุณาตรวจหลักฐานก่อน');
+    const txs=state.transactions.filter(t=>String(t.id)===String(r.txId)||t.monthlyPaymentKey===key);
+    if(txs.length!==1||txs[0].type!=='expense'||financeCents(txs[0].amount)!==financeCents(r.amount))throw Error('รายจ่ายกับหลักฐานชำระไม่ตรงกัน กรุณาตรวจยอดก่อน');
+    if(r.targetType){const history=financeHistory(r.targetType).filter(t=>t.monthlyPaymentKey===key);if(history.length!==1||financeCents(history[0].amount)!==financeCents(r.amount))throw Error('ประวัติบัตรหรือสินเชื่อกับรายเดือนไม่ตรงกัน กรุณาตรวจยอดก่อน');}
+  }
 }
 function undoMonthly(e,key) {
   assertMonthlyReversible(e,key);
   const r=monthlyReceipt(e,key); if(!r)return;
   const target=(r.targetType==='cc'?state.creditCards:state.loans).find(x=>String(x.id)===String(r.targetId));
-  if(r.targetType && target)target.debt=Number((Number(target.debt||0)+r.debtApplied).toFixed(2));
+  if(r.targetType && target){const cents=financeCents(target.debt||0,true)+financeCents(r.debtApplied,true);if(!Number.isSafeInteger(cents))throw Error('จำนวนเงินสูงเกินไป');target.debt=cents/100;}
   state.transactions=state.transactions.filter(t=>t.monthlyPaymentKey!==key && t.id!==r.txId);
   state.ccTransactions=state.ccTransactions.filter(t=>t.monthlyPaymentKey!==key);
   state.loanTransactions=state.loanTransactions.filter(t=>t.monthlyPaymentKey!==key);
   delete e.payments[key]; delete state.monthlyStatus[key]; delete state.monthlyStatus[key+'-txid'];
 }
 function applyMonthly(e,key) {
-  const link=monthlyTarget(e), amount=Number(e.amount);
-  if(!Number.isFinite(amount)||amount<=0)throw Error('จำนวนเงินต้องมากกว่า 0');
-  const target=link.targetType?(link.targetType==='cc'?state.creditCards:state.loans).find(x=>String(x.id)===String(link.targetId)):null;
-  const debtApplied=target?Math.min(Math.max(0,Number(target.debt||0)),amount):0;
-  const month=key.slice(0,7), [y,m]=month.split('-').map(Number);
-  const day=Math.min(Math.max(1,Number(e.dueday)||1),new Date(y,m,0).getDate());
-  const date=month+'-'+String(day).padStart(2,'0');
-  const txId=Date.now()+Math.floor(Math.random()*1000000);
-  state.transactions.push({id:txId,type:'expense',name:e.name,amount,date,monthKey:month,category:link.category,autoFromMonthly:true,monthlyPaymentKey:key,monthlyExpenseId:e.id});
-  if(target)target.debt=Number((Number(target.debt||0)-debtApplied).toFixed(2));
-  const history={id:txId+1,amount,date,note:'ชำระจากรายเดือน: '+e.name,type:'payment',linkedTxId:txId,monthlyPaymentKey:key};
-  if(link.targetType==='cc')state.ccTransactions.unshift({...history,cardId:target.id,cardName:target.name});
-  if(link.targetType==='ln')state.loanTransactions.unshift({...history,loanId:target.id,loanName:target.name});
-  Object.assign(e,link); e.payments=e.payments||{};
-  e.payments[key]={txId,amount,debtApplied,targetType:link.targetType||'',targetId:link.targetId||'',date};
-  state.monthlyStatus[key]=true; state.monthlyStatus[key+'-txid']=txId;
+  if(monthlyReceipt(e,key)||state.monthlyStatus[key])throw Error('รายการนี้มีหลักฐานชำระอยู่แล้ว กรุณาตรวจสถานะก่อนบันทึกซ้ำ');
+  const link=monthlyTarget(e),amount=financeMoney(e.amount);
+  const target=link.targetType?financeAccount(link.targetType,link.targetId):null;
+  const month=key.slice(0,7),[y,m]=month.split('-').map(Number),day=Math.min(Math.max(1,Number(e.dueday)||1),new Date(y,m,0).getDate());
+  const date=financeDate(month+'-'+String(day).padStart(2,'0'));
+  let txId,debtApplied=0;
+  if(target){const result=createFinanceRecord(link.targetType,target,amount,'payment',date,'',{name:e.name,category:link.category,key,id:e.id});txId=result.expense.id;debtApplied=result.record.debtApplied;}
+  else {txId=newFinanceId();state.transactions.push({id:txId,type:'expense',amount,name:e.name,date,monthKey:month,category:link.category,autoFromMonthly:true,monthlyPaymentKey:key,monthlyExpenseId:e.id});}
+  Object.assign(e,link);e.payments=e.payments||{};e.payments[key]={txId,amount,debtApplied,targetType:link.targetType||'',targetId:link.targetId||'',date};
+  state.monthlyStatus[key]=true;state.monthlyStatus[key+'-txid']=txId;
 }
 function guardMonthlyRecord(t) {
   if(t && t.autoFromMonthly || t && t.monthlyPaymentKey){alert('รายการนี้เชื่อมกับรายเดือน กรุณาแก้ไขหรือยกเลิกการชำระที่หน้ารายเดือน');return true;} return false;
@@ -1418,7 +1456,7 @@ function guardMonthlyRecord(t) {
 
 async function addMonthlyExpense() {
   const name = document.getElementById('mo-name').value.trim();
-  const amount = parseFloat(document.getElementById('mo-amount').value);
+  const amount = financeMoney(document.getElementById('mo-amount').value);
   const dueday = parseInt(document.getElementById('mo-dueday').value) || 1;
   const category = document.getElementById('mo-category').value;
   if (!name || !amount) { alert('กรุณากรอกรายการและจำนวนเงิน'); return; }
@@ -1475,7 +1513,7 @@ function populateMoCategory() {
   for(const id of ['mo-category','edit-mo-category']){
     const sel=document.getElementById(id);if(!sel)continue;
     const cur=sel.value;sel.replaceChildren(new Option('-- หมวดหมู่ --',''));
-    for(const [label,type,items] of [['บัตรเครดิต/บัตรกดเงินสด','cc',state.creditCards],['ผ่อน/สินเชื่อ','ln',state.loans]]){
+    for(const [label,type,items] of [['บัตรเครดิต/บัตรกดเงินสด','cc',state.creditCards.filter(c=>!c.archived||Number(c.debt)>0)],['ผ่อน/สินเชื่อ','ln',state.loans.filter(l=>!l.archived||Number(l.debt)>0)]]){
       const group=document.createElement('optgroup');group.label=label;
       for(const x of items)group.appendChild(new Option((type==='cc'?'💳 ':'💸 ')+x.name,type+':'+x.id));
       sel.appendChild(group);
@@ -1572,7 +1610,7 @@ function render() {
         <div class="card-g" style="background:${grad}">
           <div class="cc1"></div><div class="cc2"></div>
           <div style="display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1">
-            <span class="card-name">${c.name}</span><span class="ms card-ico">credit_card</span>
+            <span class="card-name">${c.name}${c.archived?' <small>(ปิดใช้งาน)</small>':''}</span><span class="ms card-ico">credit_card</span>
           </div>
           <div style="position:relative;z-index:1"><div class="card-chip"></div><div class="card-num">•••• •••• •••• ••••</div></div>
           <div style="display:flex;justify-content:space-between;align-items:flex-end;position:relative;z-index:1">
@@ -1600,7 +1638,7 @@ function render() {
           </div>
           <div class="card-det-actions">
             <button class="icon-btn" onclick="editCreditCard(${c.id})">แก้ไข</button>
-            <button class="icon-btn danger" onclick="deleteCreditCard(${c.id})">ลบ</button>
+            <button class="icon-btn ${c.archived?'':'danger'}" onclick="deleteCreditCard(${c.id})">${c.archived?'เปิดใช้งาน':'ปิดใช้งาน'}</button>
           </div>
         </div>
       </div>`;
@@ -1618,12 +1656,12 @@ function render() {
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
           <div class="loan-ico"><span class="ms">account_balance</span></div>
           <div style="flex:1">
-            <div class="tx-name">${l.name}</div>
+            <div class="tx-name">${l.name}${l.archived?' (ปิดใช้งาน)':''}</div>
             <div class="tx-sub">${loanTypeLabel[l.type]||''}${l.dueday?' · ครบกำหนดวันที่ '+l.dueday:''}${l.note?' · '+l.note:''}</div>
           </div>
           <div style="display:flex;gap:4px">
             <button class="btn-edit" onclick="editLoan(${l.id})">แก้ไข</button>
-            <button class="btn-danger-sm" onclick="deleteLoan(${l.id})">ลบ</button>
+            <button class="${l.archived?'btn-edit':'btn-danger-sm'}" onclick="deleteLoan(${l.id})">${l.archived?'เปิดใช้งาน':'ปิดใช้งาน'}</button>
           </div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px">
@@ -1631,7 +1669,7 @@ function render() {
           <div style="text-align:right"><div class="fl">ต่อเดือน</div><div class="loan-monthly">${l.monthly>0?fmt(l.monthly):'-'}</div></div>
         </div>
         ${installmentsLeft!==null?`<div class="tx-sub" style="margin-bottom:10px">เหลือประมาณ ${installmentsLeft} งวด</div>`:''}
-        <button class="pay-btn" onclick="openLoanPayment(${l.id})"><span class="ms">payments</span><span class="pt">บันทึกการชำระ</span></button>
+        <button class="pay-btn" ${l.archived&&!(l.debt>0)?'disabled':''} onclick="openLoanPayment(${l.id})"><span class="ms">payments</span><span class="pt">${l.archived&&!(l.debt>0)?'ปิดใช้งานแล้ว':'บันทึกการชำระ'}</span></button>
       </div>`;
     }).join('');
   }

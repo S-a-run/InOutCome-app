@@ -1,18 +1,6 @@
-const fs=require('fs'),vm=require('vm'),assert=require('assert');
-const source=fs.readFileSync(require('path').join(__dirname,'..','index.html'),'utf8');
-const main=[...source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(m=>m[1]).find(s=>s.includes('const MONTHS_TH')).split('(function init()')[0];
-const clone=x=>JSON.parse(JSON.stringify(x));
-function makeServer(){return {data:{transactions:{},creditCards:{1:{id:1,name:'Card',limit:10000,debt:1000}},ccTransactions:{},loans:{2:{id:2,name:'Loan',debt:500}},loanTransactions:{},monthlyExpenses:{},monthlyStatus:{},unknown:{keep:true}},clients:[],queue:[],failNext:false,flush(){const job=this.queue.shift();assert(job,'expected queued transaction');if(this.failNext){this.failNext=false;job.done(Error('permission denied'),false,null);return;}job.updater(clone(job.client.cache));const merged=job.updater(clone(this.data));if(merged===undefined){job.done(null,false,{val:()=>clone(this.data)});return;}this.data=clone(merged);for(const client of this.clients){if(!client.paused&&client.root){client.cache=clone(this.data);client.root({val:()=>clone(this.data)});}}job.done(null,true,{val:()=>clone(this.data)});}};}
-function client(server,{load=true,local=null}={}){
- const fields={},alerts=[],storage=new Map(local?[['budget-local',JSON.stringify(local)]]:[]);const c={cache:clone(server.data),paused:false,alerts,storage};
- const el=id=>fields[id]||(fields[id]={value:'',style:{},dataset:{},textContent:'',tagName:'BUTTON',disabled:false,classList:{contains:()=>true,add(){},remove(){},toggle(){}},getAttribute:()=>'',setAttribute(){},appendChild(){},setCustomValidity(){},reportValidity(){}});
- const ctx={console,Date,Math,Number,JSON,Promise,Set,Map,confirm:()=>true,alert:m=>alerts.push(m),prompt:()=>null,Option:function(t,v){this.text=t;this.value=v;},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},document:{getElementById:el,querySelectorAll:()=>[],createElement:()=>el('new-'+Math.random())}};
- ctx.fakeDb={ref:path=>({off(){if(path==='budget')c.root=null;},on(event,cb,error){if(path==='.info/connected'){c.connection=cb;cb({val:()=>true});}else {c.root=cb;c.error=error;if(load)cb({val:()=>clone(server.data)});}},transaction(updater,done,applyLocal){assert.equal(applyLocal,false);server.queue.push({updater,done,client:c});}})};
- vm.createContext(ctx);vm.runInContext(main,ctx);vm.runInContext('render=()=>{};db=fakeDb;startListeners();',ctx);c.ctx=ctx;c.run=x=>vm.runInContext(x,ctx);c.get=x=>clone(c.run(x));c.field=(id,v)=>el(id).value=String(v);c.status=()=>el('syncStatus').textContent;server.clients.push(c);return c;
-}
-const tick=()=>new Promise(r=>setImmediate(r));
-async function add(c,id,name){c.ctx.newItem={id,name,amount:10,type:'expense',date:'2026-10-27',monthKey:'2026-10'};return c.run('performBudgetMutation(async()=>{state.transactions.push(newItem);await saveData();})');}
-async function pay(c,amount){c.field('cc-select-card',1);c.field('cc-pay-amount',amount);c.field('cc-pay-date','2026-10-27');c.field('cc-pay-note','');return c.run('saveCCTransaction()');}
+const assert=require('assert');
+const {makeServer,client,add,pay,tick,clone}=require('./test-support.cjs');
+
 (async()=>{
 let count=0;async function test(name,fn){await fn();count++;console.log('PASS '+name);}
 await test('Initial read gate blocks mutations before full root load',async()=>{const s=makeServer(),c=client(s,{load:false});await c.run('deleteCreditCard(1)');assert.equal(s.queue.length,0);assert.equal(s.data.creditCards[1].debt,1000);assert(c.alerts[0].includes('โหลดข้อมูล'));});
