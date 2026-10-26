@@ -309,7 +309,8 @@ if (sessionStorage.getItem('pin_ok') === '1') {
         </div>
         <div class="form-row"><input type="text" id="tx-name" placeholder="รายการ เช่น เงินเดือน, ค่าอาหาร"></div>
         <div class="form-row">
-          <input type="number" id="tx-amount" placeholder="จำนวนเงิน (บาท)" inputmode="decimal">
+          <input type="text" id="tx-amount" placeholder="จำนวนเงิน เช่น 22+25" inputmode="text" enterkeyhint="done" onkeydown="return amountEnter(event,this)" onkeyup="return amountEnter(event,this)" oninput="this.setCustomValidity('')" onchange="if(this.value.trim())calculateAmountInput(this)">
+          <button type="button" class="btn btn-outline btn-sm" aria-label="คำนวณจำนวนเงิน" onclick="calculateAmountInput(document.getElementById('tx-amount'))">คำนวณ</button>
           <input type="date" id="tx-date">
         </div>
         <div class="form-row">
@@ -525,7 +526,8 @@ if (sessionStorage.getItem('pin_ok') === '1') {
     </div>
     <div class="form-row"><input type="text" id="edit-tx-name" placeholder="รายการ"></div>
     <div class="form-row">
-      <input type="number" id="edit-tx-amount" placeholder="จำนวนเงิน" inputmode="decimal">
+      <input type="text" id="edit-tx-amount" placeholder="จำนวนเงิน เช่น 22+25" inputmode="text" enterkeyhint="done" onkeydown="return amountEnter(event,this)" onkeyup="return amountEnter(event,this)" oninput="this.setCustomValidity('')" onchange="if(this.value.trim())calculateAmountInput(this)">
+          <button type="button" class="btn btn-outline btn-sm" aria-label="คำนวณจำนวนเงิน" onclick="calculateAmountInput(document.getElementById('edit-tx-amount'))">คำนวณ</button>
       <input type="date" id="edit-tx-date">
     </div>
     <div class="form-row">
@@ -1581,12 +1583,16 @@ function calculateAmountInput(field) {
     field.value=String(result);field.setCustomValidity('');return result;
   }catch(err){field.setCustomValidity(err.message);field.reportValidity();return NaN;}
 }
-for(const id of ['tx-amount','edit-tx-amount']){
-  const field=document.getElementById(id);if(!field)continue;
-  field.type='text';field.inputMode='text';field.setAttribute('enterkeyhint','done');
-  field.placeholder='จำนวนเงิน เช่น 22+25 (Enter คำนวณ)';
-  field.addEventListener('input',()=>field.setCustomValidity(''));
-  field.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();event.stopPropagation();calculateAmountInput(field);}});
+function amountEnter(event,field) {
+  if(event.key==='Enter'||event.code==='NumpadEnter'||event.keyCode===13){
+    event.preventDefault();event.stopPropagation();
+    // Repeated keydown/keyup events must not re-evaluate an invalid formula twice.
+    if(event.type!=='keyup'||field.dataset.calculatedValue!==field.value){
+      calculateAmountInput(field);field.dataset.calculatedValue=field.value;
+    }
+    return false;
+  }
+  return true;
 }
 
 </script>
