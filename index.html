@@ -30,7 +30,7 @@
     .month-nav-bar{display:flex;align-items:center;gap:4px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:4px 8px}
     .month-nav-bar button{background:transparent;border:none;color:var(--text-m);cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
     .month-nav-bar .ml{font-size:11px;font-weight:700;color:var(--accent-t);white-space:nowrap;min-width:72px;text-align:center}
-    .sync-dot{font-size:11px;white-space:nowrap;flex-shrink:0}
+    .sync-dot{font-size:11px;white-space:nowrap;min-width:0;max-width:112px;overflow:hidden;text-overflow:ellipsis;flex-shrink:1}
     .sync-ok{color:var(--pos)}.sync-off{color:var(--text-m)}.sync-err{color:var(--neg)}
     /* Pages */
     .pages-wrap{flex:1 1 0%;min-height:0;overflow-y:auto;overflow-x:hidden;padding-bottom:20px;scroll-padding:16px;-webkit-overflow-scrolling:touch}
@@ -190,6 +190,8 @@
     .hist-item{padding:11px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
     .hist-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
     .hist-pay{background:var(--pos)}.hist-charge{background:var(--neg)}
+    .app button:disabled{opacity:.5;cursor:wait}
+    .chk[aria-disabled="true"]{opacity:.5;cursor:wait}
   </style>
 </head>
 <body>
@@ -739,7 +741,7 @@ function editSelectType(t) {
   editingTxType = t;
   document.querySelectorAll('#edit-type-chips .chip').forEach(c => c.classList.toggle('selected', c.dataset.type === t));
 }
-function saveEditTx() {
+async function saveEditTx() {
   const t = state.transactions.find(x => x.id === editingTxId);
   if (!t) return;
   const name = document.getElementById('edit-tx-name').value.trim();
@@ -753,7 +755,7 @@ function saveEditTx() {
   t.note = document.getElementById('edit-tx-note').value.trim();
   t.type = editingTxType;
   t.monthKey = monthKey(d.getFullYear(), d.getMonth());
-  saveData(); closeModal('modal-tx'); render();
+  await saveData(); closeModal('modal-tx'); render();
 }
 
 /* ---- Edit Credit Card ---- */
@@ -769,7 +771,7 @@ function editCreditCard(id) {
   populateCCGroupSelect('edit-cc-group', id, c.limitGroup || '');
   openModal('modal-cc');
 }
-function saveEditCC() {
+async function saveEditCC() {
   const c = state.creditCards.find(x => x.id === editingCCId);
   if (!c) return;
   const name = document.getElementById('edit-cc-name').value.trim();
@@ -780,7 +782,7 @@ function saveEditCC() {
   c.cutday = parseInt(document.getElementById('edit-cc-cutday').value) || 0;
   c.dueday = parseInt(document.getElementById('edit-cc-dueday').value) || 0;
   c.limitGroup = document.getElementById('edit-cc-group').value || '';
-  saveData(); closeModal('modal-cc'); render();
+  await saveData(); closeModal('modal-cc'); render();
 }
 
 /* ---- Edit Monthly ---- */
@@ -798,7 +800,7 @@ function editMonthlyExpense(id) {
   sel.value=value;
   openModal('modal-mo');
 }
-function saveEditMo() {
+async function saveEditMo() {
   const e=state.monthlyExpenses.find(x=>x.id===editingMoId);if(!e)return;
   const name=document.getElementById('edit-mo-name').value.trim();
   const amount=Number(document.getElementById('edit-mo-amount').value);
@@ -811,7 +813,7 @@ function saveEditMo() {
     Object.assign(e,{name,amount,dueday},link);
     if(paid)applyMonthly(e,key);
   }catch(err){alert(err.message);return;}
-  saveData();closeModal('modal-mo');render();
+  await saveData();closeModal('modal-mo');render();
 }
 
 function populateCCGroupSelect(selectId, excludeId, currentGroup) {
@@ -848,6 +850,7 @@ function setSyncStatus(msg, cls) {
   const el = document.getElementById('syncStatus');
   el.textContent = msg;
   el.className = 'sync-dot ' + cls;
+  el.title=msg;el.setAttribute('role','status');el.setAttribute('aria-live','polite');
 }
 
 function parseFirebaseConfig(text) {
@@ -867,15 +870,23 @@ function saveFirebaseConfig() {
   const raw = document.getElementById('fb-config-input').value.trim();
   const config = parseFirebaseConfig(raw);
   if (!config || !config.apiKey || !config.databaseURL) { alert('รูปแบบ config ไม่ถูกต้อง'); return; }
+  if(syncState.busy){alert('กรุณารอผลบันทึกก่อนเปลี่ยนการเชื่อมต่อ');return;}
   localStorage.setItem('fb-config', JSON.stringify(config));
+  localStorage.removeItem('budget-local-mode');
   initFirebase(config);
 }
 
 function initFirebase(config) {
+  if(syncState.busy){alert('กรุณารอผลบันทึกก่อนเปลี่ยนการเชื่อมต่อ');return;}
+  const initGeneration=++syncState.generation;
+  fbListeners.forEach(r=>r.off());fbListeners=[];
+  syncState.mode='connecting';syncState.loaded=false;syncState.connected=false;
+  updateSyncControls();
   try {
     // delete existing apps before reinit
     const apps = firebase.apps.slice();
     const doInit = () => {
+      if(initGeneration!==syncState.generation)return;
       try {
         firebase.initializeApp(config);
         db = firebase.database();
@@ -884,7 +895,8 @@ function initFirebase(config) {
         document.getElementById('fb-status-row').style.display = 'flex';
         document.getElementById('fb-status-text').textContent = 'เชื่อมต่อกับ: ' + config.projectId;
       } catch(e) {
-        setSyncStatus('⬤ เชื่อมต่อไม่สำเร็จ', 'sync-err');
+        syncState.mode='error';syncState.loaded=false;db=null;
+        setSyncStatus('⬤ เชื่อมต่อไม่สำเร็จ · อ่านได้อย่างเดียว', 'sync-err');
         loadLocal();
       }
     };
@@ -894,54 +906,196 @@ function initFirebase(config) {
       doInit();
     }
   } catch(e) {
-    setSyncStatus('⬤ เชื่อมต่อไม่สำเร็จ', 'sync-err');
+    syncState.mode='error';syncState.loaded=false;db=null;
+        setSyncStatus('⬤ เชื่อมต่อไม่สำเร็จ · อ่านได้อย่างเดียว', 'sync-err');
     loadLocal();
   }
 }
 
-function startListeners() {
-  const keys = ['transactions','creditCards','ccTransactions','loans','loanTransactions','monthlyExpenses','monthlyStatus'];
-  fbListeners.forEach(r => r.off()); fbListeners = [];
-  let loaded = 0;
-  keys.forEach(key => {
-    const ref = db.ref('budget/' + key);
-    fbListeners.push(ref);
-    ref.on('value', snap => {
-      const val = snap.val();
-      state[key] = key === 'monthlyStatus' ? (val || {}) : (val ? Object.values(val) : []);
-      if (++loaded >= keys.length) { setSyncStatus('⬤ ซิงค์แล้ว', 'sync-ok'); render(); }
-    }, err => { setSyncStatus('⬤ Firebase ขัดข้อง', 'sync-err'); if (loaded === 0) loadLocal(); });
-  });
+const BUDGET_KEYS = ['transactions','creditCards','ccTransactions','loans','loanTransactions','monthlyExpenses','monthlyStatus'];
+const syncState = { mode:'connecting', loaded:false, connected:false, busy:false, writing:false, generation:0, baseline:null, pending:null, activeBase:null };
+function syncClone(value) { return JSON.parse(JSON.stringify(value)); }
+function syncEqual(a,b) {
+  const stable=v=>v && typeof v==='object'?(Array.isArray(v)?v.map(stable):Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])]))):v;
+  return JSON.stringify(stable(a ?? null))===JSON.stringify(stable(b ?? null));
 }
-
-function disconnectFirebase() {
-  if (!confirm('ยกเลิกการเชื่อมต่อ Firebase?')) return;
-  fbListeners.forEach(r => r.off()); fbListeners = []; db = null;
-  localStorage.removeItem('fb-config');
-  document.getElementById('fb-status-row').style.display = 'none';
-  setSyncStatus('⬤ ยังไม่ได้เชื่อมต่อ', 'sync-off');
-  loadLocal();
-}
-
-function saveData() {
-  if (db) {
-    const toObj = arr => arr.reduce((o, item) => { o[item.id] = item; return o; }, {});
-    const data={transactions:toObj(state.transactions),creditCards:toObj(state.creditCards),ccTransactions:toObj(state.ccTransactions),loans:toObj(state.loans),loanTransactions:toObj(state.loanTransactions),monthlyExpenses:toObj(state.monthlyExpenses),monthlyStatus:state.monthlyStatus||{}};
-    db.ref('budget').update(data).catch(err=>{setSyncStatus('บันทึกไม่สำเร็จ','sync-err');alert('บันทึกออนไลน์ไม่สำเร็จ: '+err.message);});
-  } else {
-    localStorage.setItem('budget-local', JSON.stringify({
-      transactions: state.transactions, creditCards: state.creditCards,
-      ccTransactions: state.ccTransactions, loans: state.loans, loanTransactions: state.loanTransactions,
-      monthlyExpenses: state.monthlyExpenses, monthlyStatus: state.monthlyStatus
-    }));
+function normalizeBudget(raw) {
+  const data=raw && typeof raw==='object'?syncClone(raw):{};
+  for(const key of BUDGET_KEYS){
+    const value=data[key];
+    if(value!==undefined && value!==null && typeof value!=='object')throw Error('รูปแบบข้อมูล '+key+' ไม่ถูกต้อง');
+    data[key]=value?Object.fromEntries(Object.entries(value)):{};
   }
+  return data;
 }
-
-function loadLocal() {
-  const saved = localStorage.getItem('budget-local');
-  if (saved) { const d = JSON.parse(saved); Object.assign(state, { transactions: d.transactions||[], creditCards: d.creditCards||[], ccTransactions: d.ccTransactions||[], loans: d.loans||[], loanTransactions: d.loanTransactions||[], monthlyExpenses: d.monthlyExpenses||[], monthlyStatus: d.monthlyStatus||{} }); }
+function captureBudget() {
+  const data={};
+  for(const key of BUDGET_KEYS){
+    if(key==='monthlyStatus'){data[key]=syncClone(state[key]||{});continue;}
+    if(!Array.isArray(state[key]))throw Error('รูปแบบข้อมูล '+key+' ไม่ถูกต้อง');
+    const map={};
+    for(const item of state[key]){
+      if(!item||item.id===undefined||item.id===null)throw Error('มีรายการที่ไม่มีรหัสใน '+key);
+      const id=String(item.id);
+      if(/[.#$\[\]\/]/.test(id)||Object.prototype.hasOwnProperty.call(map,id))throw Error('พบรหัสรายการซ้ำหรือไม่ถูกต้องใน '+key);
+      map[id]=syncClone(item);
+    }
+    data[key]=map;
+  }
+  return data;
+}
+function budgetChanges(before,after) {
+  const changes=[];
+  for(const key of BUDGET_KEYS){
+    const a=before[key]||{},b=after[key]||{};
+    for(const id of new Set([...Object.keys(a),...Object.keys(b)])){
+      if(!syncEqual(a[id],b[id]))changes.push({key,id,before:a[id]??null,after:b[id]??null});
+    }
+  }
+  return changes;
+}
+function mergeBudgetChanges(current,changes) {
+  const result=normalizeBudget(current);
+  for(const change of changes){
+    if(!syncEqual(result[change.key][change.id],change.before))return null;
+  }
+  for(const change of changes){
+    if(change.after===null)delete result[change.key][change.id];
+    else result[change.key][change.id]=syncClone(change.after);
+  }
+  return result;
+}
+function cacheConfirmedBudget() {
+  const data={};for(const key of BUDGET_KEYS)data[key]=state[key];
+  try {localStorage.setItem('budget-local',JSON.stringify(data));}
+  catch(err){console.warn('ไม่สามารถเก็บสำเนาข้อมูลในเครื่อง',err);}
+}
+function adoptBudget(raw,cache=true) {
+  const data=normalizeBudget(raw);
+  for(const key of BUDGET_KEYS)state[key]=key==='monthlyStatus'?syncClone(data[key]):Object.values(syncClone(data[key]));
+  syncState.baseline=data;syncState.loaded=true;
+  if(cache)cacheConfirmedBudget();
   render();
 }
+function updateSyncControls() {
+  const writable=syncState.loaded && (syncState.mode==='local'||(syncState.mode==='online'&&syncState.connected)) && !syncState.busy;
+  const actions=/\b(saveEditTx|saveEditCC|saveEditMo|addTransaction|deleteTransaction|addCreditCard|deleteCreditCard|saveCCTransaction|deleteCCTx|editCCTx|addLoan|deleteLoan|saveEditLoan|saveLoanPayment|deleteLoanTx|editLoanTx|addMonthlyExpense|deleteMonthlyExpense|toggleMonthlyPaid|importData)\s*\(/;
+  document.querySelectorAll('button[onclick],.chk[onclick]').forEach(el=>{
+    if(!actions.test(el.getAttribute('onclick')||''))return;
+    if(el.tagName==='BUTTON')el.disabled=!writable;
+    el.setAttribute('aria-disabled',String(!writable));
+    el.title=writable?'':syncState.busy?'กำลังรอผลบันทึก':!syncState.loaded?'รอโหลดข้อมูลให้ครบก่อน':'ขณะนี้ออฟไลน์ จึงยังบันทึกไม่ได้';
+  });
+}
+function showConnectionStatus() {
+  if(syncState.writing){setSyncStatus(syncState.connected?'⬤ กำลังบันทึก...':'⬤ รอเชื่อมต่อเพื่อยืนยันการบันทึก','sync-off');return;}
+  if(syncState.mode==='local')setSyncStatus('⬤ เก็บเฉพาะในเครื่อง','sync-off');
+  else if(syncState.mode==='error')setSyncStatus('⬤ เชื่อมต่อขัดข้อง · อ่านได้อย่างเดียว','sync-err');
+  else if(!syncState.connected)setSyncStatus('⬤ ออฟไลน์ · อ่านได้อย่างเดียว','sync-off');
+  else if(!syncState.loaded)setSyncStatus('⬤ กำลังโหลดข้อมูล...','sync-off');
+  else setSyncStatus('⬤ ซิงค์แล้ว','sync-ok');
+  updateSyncControls();
+}
+function assertCanMutate() {
+  if(syncState.busy)throw Error('กำลังรอยืนยันการบันทึก กรุณารอ อย่าบันทึกซ้ำ');
+  if(!syncState.loaded)throw Error('ยังโหลดข้อมูลไม่ครบ กรุณารอเชื่อมต่อก่อนบันทึก');
+  if(syncState.mode!=='local'&&(!syncState.connected||syncState.mode!=='online'))throw Error('ขณะนี้ยังบันทึกออนไลน์ไม่ได้ ข้อมูลที่แสดงเป็นข้อมูลสำหรับอ่าน กรุณารอเชื่อมต่อ');
+}
+async function performBudgetMutation(action) {
+  try {assertCanMutate();} catch(err){alert(err.message);return false;}
+  syncState.busy=true;syncState.activeBase=syncClone(syncState.baseline);updateSyncControls();
+  try {return await action();}
+  catch(err){
+    if(syncState.pending){adoptBudget(syncState.pending);syncState.pending=null;}
+    else if(syncState.baseline)adoptBudget(syncState.baseline,false);
+    setSyncStatus('⬤ บันทึกไม่สำเร็จ','sync-err');
+    alert(err.message||'บันทึกไม่สำเร็จ กรุณาตรวจการเชื่อมต่อ');return false;
+  } finally {
+    syncState.busy=false;syncState.activeBase=null;
+    if(syncState.pending){adoptBudget(syncState.pending);syncState.pending=null;}
+    updateSyncControls();
+    const modal=document.getElementById('modal-cc-history');
+    if(modal && !modal.classList.contains('hidden') && modal.dataset.cardId)openCCHistory(Number(modal.dataset.cardId));
+  }
+}
+function startListeners() {
+  fbListeners.forEach(r=>r.off());fbListeners=[];
+  const generation=++syncState.generation;
+  syncState.mode='online';syncState.loaded=false;syncState.connected=false;syncState.pending=null;
+  updateSyncControls();
+  const root=db.ref('budget'),connection=db.ref('.info/connected');
+  fbListeners.push(root,connection);
+  connection.on('value',snap=>{
+    if(generation!==syncState.generation)return;
+    syncState.connected=snap.val()===true;showConnectionStatus();
+  });
+  root.on('value',snap=>{
+    if(generation!==syncState.generation)return;
+    try {
+      if(syncState.busy){syncState.pending=normalizeBudget(snap.val());return;}
+      adoptBudget(snap.val());showConnectionStatus();
+    }catch(err){syncState.mode='error';syncState.loaded=false;showConnectionStatus();}
+  },err=>{
+    if(generation!==syncState.generation)return;
+    syncState.mode='error';syncState.loaded=false;showConnectionStatus();
+    if(!syncState.busy)loadLocal();
+  });
+}
+async function saveData() {
+  if(!syncState.busy)throw Error('ต้องเริ่มการบันทึกผ่านรายการก่อน');
+  const desired=captureBudget();
+  if(syncState.mode==='local'){
+    localStorage.setItem('budget-local',JSON.stringify(Object.fromEntries(BUDGET_KEYS.map(key=>[key,state[key]]))));
+    syncState.baseline=desired;setSyncStatus('⬤ บันทึกในเครื่องแล้ว','sync-off');return;
+  }
+  if(!db||!syncState.connected||!syncState.loaded)throw Error('การเชื่อมต่อขาดหาย ยังไม่ได้บันทึก กรุณาลองใหม่เมื่อออนไลน์');
+  const changes=budgetChanges(syncState.activeBase,desired);
+  if(!changes.length)return;
+  const generation=syncState.generation;
+  let mergeError='';
+  syncState.writing=true;showConnectionStatus();
+  try {
+    await new Promise((resolve,reject)=>{
+      const operation=db.ref('budget').transaction(current=>{
+        if(generation!==syncState.generation)return;
+        try {
+          const merged=mergeBudgetChanges(current,changes);
+          if(!merged)return;
+          return merged;
+        }catch(err){mergeError=err.message;return;}
+      },(error,committed,snapshot)=>{
+        if(generation!==syncState.generation){reject(Error('การเชื่อมต่อเปลี่ยนระหว่างบันทึก กรุณาตรวจข้อมูลล่าสุด'));return;}
+        if(error){reject(Error('บันทึกไม่สำเร็จ: '+error.message));return;}
+        syncState.pending=null;
+        if(snapshot)adoptBudget(snapshot.val());
+        if(!committed){reject(Error(mergeError||'รายการนี้ถูกเปลี่ยนจากอีกเครื่องแล้ว ระบบโหลดข้อมูลล่าสุดให้แล้ว กรุณาตรวจยอดและลองใหม่ รายการนี้ยังไม่ได้บันทึก'));return;}
+        setSyncStatus('⬤ บันทึกสำเร็จ','sync-ok');resolve();
+      },false);
+      if(operation && typeof operation.catch==='function')operation.catch(()=>{});
+    });
+  }finally{syncState.writing=false;}
+}
+function loadLocal() {
+  try {
+    const saved=localStorage.getItem('budget-local');
+    if(saved){
+      const data=JSON.parse(saved);for(const key of BUDGET_KEYS)state[key]=data[key]||(key==='monthlyStatus'?{}:[]);
+      if(syncState.mode==='local'){syncState.baseline=captureBudget();syncState.loaded=true;}
+    }
+    if(syncState.mode==='local'&&!syncState.loaded){syncState.baseline=captureBudget();syncState.loaded=true;}
+    render();updateSyncControls();
+  }catch(err){setSyncStatus('⬤ อ่านข้อมูลสำรองไม่สำเร็จ','sync-err');}
+}
+function disconnectFirebase() {
+  if(syncState.busy){alert('กรุณารอผลบันทึกก่อนเปลี่ยนการเชื่อมต่อ');return;}
+  if(!confirm('ยกเลิกการเชื่อมต่อ Firebase และใช้เฉพาะข้อมูลในเครื่อง?'))return;
+  ++syncState.generation;fbListeners.forEach(r=>r.off());fbListeners=[];db=null;
+  syncState.mode='local';syncState.connected=false;syncState.loaded=false;syncState.pending=null;
+  localStorage.removeItem('fb-config');localStorage.setItem('budget-local-mode','1');
+  document.getElementById('fb-status-row').style.display='none';
+  loadLocal();showConnectionStatus();
+}
+
 
 /* ---- UI helpers ---- */
 function changeMonth(d) {
@@ -961,7 +1115,7 @@ function selectCCAction(a) {
 }
 
 /* ---- CRUD ---- */
-function addTransaction() {
+async function addTransaction() {
   const name = document.getElementById('tx-name').value.trim();
   const amount = calculateAmountInput(document.getElementById('tx-amount'));
   if(!Number.isFinite(amount))return;
@@ -971,19 +1125,19 @@ function addTransaction() {
   if (!name || !amount || !date) { alert('กรุณากรอกรายการ, จำนวนเงิน และวันที่'); return; }
   const d = new Date(date);
   state.transactions.unshift({ id: Date.now(), name, amount, date, category, note, type: state.selectedType, monthKey: monthKey(d.getFullYear(), d.getMonth()) });
-  saveData();
+  await saveData();
   ['tx-name','tx-amount','tx-note'].forEach(id => document.getElementById(id).value = '');
   render();
 }
 
-function deleteTransaction(id) {
+async function deleteTransaction(id) {
   if(guardMonthlyRecord(state.transactions.find(t=>t.id===id)))return;
   if (!confirm('ลบรายการนี้?')) return;
   state.transactions = state.transactions.filter(t => t.id !== id);
-  saveData(); render();
+  await saveData(); render();
 }
 
-function addCreditCard() {
+async function addCreditCard() {
   const name = document.getElementById('cc-name').value.trim();
   const limit = parseFloat(document.getElementById('cc-limit').value) || 0;
   const debt = parseFloat(document.getElementById('cc-debt-input').value) || 0;
@@ -992,18 +1146,18 @@ function addCreditCard() {
   const limitGroup = document.getElementById('cc-group-select').value || '';
   if (!name) { alert('กรุณากรอกชื่อบัตร'); return; }
   state.creditCards.push({ id: Date.now(), name, limit, debt, cutday, dueday, limitGroup });
-  saveData();
+  await saveData();
   ['cc-name','cc-limit','cc-debt-input','cc-cutday','cc-dueday'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('cc-group-select').value = '';
   document.getElementById('cc-add-form').style.display = 'none';
   render();
 }
 
-function deleteCreditCard(id) {
+async function deleteCreditCard(id) {
   if (!confirm('ลบบัตรนี้?')) return;
   state.creditCards = state.creditCards.filter(c => c.id !== id);
   state.ccTransactions = state.ccTransactions.filter(t => t.cardId !== id);
-  saveData(); render();
+  await saveData(); render();
 }
 
 function openCCPayment(cardId) {
@@ -1014,7 +1168,7 @@ function openCCPayment(cardId) {
   document.getElementById('cc-payment-form').scrollIntoView({behavior:'smooth'});
 }
 
-function saveCCTransaction() {
+async function saveCCTransaction() {
   const cardId = parseInt(document.getElementById('cc-select-card').value);
   const amount = parseFloat(document.getElementById('cc-pay-amount').value);
   const date = document.getElementById('cc-pay-date').value;
@@ -1033,7 +1187,7 @@ function saveCCTransaction() {
     ccTx.linkedTxId = txId + 1;
   }
   state.ccTransactions.unshift(ccTx);
-  saveData();
+  await saveData();
   document.getElementById('cc-pay-amount').value = '';
   document.getElementById('cc-pay-note').value = '';
   document.getElementById('cc-payment-form').style.display = 'none';
@@ -1043,6 +1197,7 @@ function saveCCTransaction() {
 function openCCHistory(cardId) {
   const card = state.creditCards.find(c => c.id === cardId);
   if (!card) return;
+  document.getElementById('modal-cc-history').dataset.cardId=String(cardId);
   document.getElementById('cc-history-modal-title').textContent = 'ประวัติ: ' + card.name;
   const curMonth = state.currentYear+'-'+(String(state.currentMonth+1).padStart(2,'0'));
   const txs = state.ccTransactions.filter(t => t.cardId === cardId && t.date && t.date.startsWith(curMonth));
@@ -1064,7 +1219,7 @@ function openCCHistory(cardId) {
   openModal('modal-cc-history');
 }
 
-function deleteCCTx(id) {
+async function deleteCCTx(id) {
   const t = state.ccTransactions.find(x => x.id === id);
   if (!t) return;
   if(guardMonthlyRecord(t))return;
@@ -1073,10 +1228,10 @@ function deleteCCTx(id) {
   if (card) card.debt = Math.max(0, (card.debt || 0) + (t.type === 'payment' ? t.amount : -t.amount));
   if (t.linkedTxId) state.transactions = state.transactions.filter(x => x.id !== t.linkedTxId);
   state.ccTransactions = state.ccTransactions.filter(x => x.id !== id);
-  saveData(); render();
+  await saveData(); render();
 }
 
-function editCCTx(id) {
+async function editCCTx(id) {
   const t = state.ccTransactions.find(x => x.id === id);
   if (!t) return;
   if(guardMonthlyRecord(t))return;
@@ -1091,13 +1246,13 @@ function editCCTx(id) {
     const linked = state.transactions.find(x => x.id === t.linkedTxId);
     if (linked) { linked.amount = newAmount; linked.name = 'ชำระบัตร: ' + t.cardName + (newNote?' ('+newNote+')':''); }
   }
-  saveData(); render();
+  await saveData(); render();
 }
 
 /* ---- Loans ---- */
 const loanTypeLabel = { bnpl: 'BNPL', cash: 'กดเงินสด/สินเชื่อ', installment: 'ผ่อนสินค้า', other: 'อื่นๆ' };
 
-function addLoan() {
+async function addLoan() {
   const name = document.getElementById('ln-name').value.trim();
   const debt = parseFloat(document.getElementById('ln-debt').value) || 0;
   const monthly = parseFloat(document.getElementById('ln-monthly').value) || 0;
@@ -1106,17 +1261,17 @@ function addLoan() {
   const note = document.getElementById('ln-note').value.trim();
   if (!name) { alert('กรุณากรอกชื่อ'); return; }
   state.loans.push({ id: Date.now(), name, debt, monthly, dueday, type, note });
-  saveData();
+  await saveData();
   ['ln-name','ln-debt','ln-monthly','ln-dueday','ln-note'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('ln-add-form').style.display = 'none';
   render();
 }
 
-function deleteLoan(id) {
+async function deleteLoan(id) {
   if (!confirm('ลบรายการนี้?')) return;
   state.loans = state.loans.filter(l => l.id !== id);
   state.loanTransactions = state.loanTransactions.filter(t => t.loanId !== id);
-  saveData(); render();
+  await saveData(); render();
 }
 
 function editLoan(id) {
@@ -1132,7 +1287,7 @@ function editLoan(id) {
   openModal('modal-ln');
 }
 
-function saveEditLoan() {
+async function saveEditLoan() {
   const l = state.loans.find(x => x.id === editingLnId);
   if (!l) return;
   const name = document.getElementById('edit-ln-name').value.trim();
@@ -1143,7 +1298,7 @@ function saveEditLoan() {
   l.dueday = parseInt(document.getElementById('edit-ln-dueday').value) || 0;
   l.type = document.getElementById('edit-ln-type').value;
   l.note = document.getElementById('edit-ln-note').value.trim();
-  saveData(); closeModal('modal-ln'); render();
+  await saveData(); closeModal('modal-ln'); render();
 }
 
 function openLoanPayment(loanId) {
@@ -1153,7 +1308,7 @@ function openLoanPayment(loanId) {
   document.getElementById('loan-payment-form').scrollIntoView({behavior:'smooth'});
 }
 
-function saveLoanPayment() {
+async function saveLoanPayment() {
   const loanId = parseInt(document.getElementById('ln-select').value);
   const amount = parseFloat(document.getElementById('ln-pay-amount').value);
   const date = document.getElementById('ln-pay-date').value;
@@ -1168,14 +1323,14 @@ function saveLoanPayment() {
   state.transactions.push({ id: txId+1, type: 'expense', amount, name: 'ชำระ: '+loan.name+(note?' ('+note+')':''), date, monthKey: y+'-'+m, category: 'ผ่อน/สินเชื่อ', autoFromLoan: true, loanTxId: txId });
   lnTx.linkedTxId = txId+1;
   state.loanTransactions.unshift(lnTx);
-  saveData();
+  await saveData();
   document.getElementById('ln-pay-amount').value = '';
   document.getElementById('ln-pay-note').value = '';
   document.getElementById('loan-payment-form').style.display = 'none';
   render();
 }
 
-function deleteLoanTx(id) {
+async function deleteLoanTx(id) {
   const t = state.loanTransactions.find(x => x.id === id);
   if (!t || guardMonthlyRecord(t)) return;
   if (!confirm('ลบรายการนี้?')) return;
@@ -1183,10 +1338,10 @@ function deleteLoanTx(id) {
   if (loan) loan.debt = (loan.debt || 0) + t.amount;
   if (t.linkedTxId) state.transactions = state.transactions.filter(x => x.id !== t.linkedTxId);
   state.loanTransactions = state.loanTransactions.filter(x => x.id !== id);
-  saveData(); render();
+  await saveData(); render();
 }
 
-function editLoanTx(id) {
+async function editLoanTx(id) {
   const t = state.loanTransactions.find(x => x.id === id);
   if (!t) return;
   if(guardMonthlyRecord(t))return;
@@ -1201,7 +1356,7 @@ function editLoanTx(id) {
     const linked = state.transactions.find(x => x.id === t.linkedTxId);
     if (linked) { linked.amount = newAmount; linked.name = 'ชำระ: '+t.loanName+(newNote?' ('+newNote+')':''); }
   }
-  saveData(); render();
+  await saveData(); render();
 }
 
 function monthlySelection(value) {
@@ -1261,7 +1416,7 @@ function guardMonthlyRecord(t) {
   if(t && t.autoFromMonthly || t && t.monthlyPaymentKey){alert('รายการนี้เชื่อมกับรายเดือน กรุณาแก้ไขหรือยกเลิกการชำระที่หน้ารายเดือน');return true;} return false;
 }
 
-function addMonthlyExpense() {
+async function addMonthlyExpense() {
   const name = document.getElementById('mo-name').value.trim();
   const amount = parseFloat(document.getElementById('mo-amount').value);
   const dueday = parseInt(document.getElementById('mo-dueday').value) || 1;
@@ -1271,28 +1426,28 @@ function addMonthlyExpense() {
   let link; try { link=monthlySelection(category); } catch(err) { alert(err.message); return; }
   if(!Number.isFinite(amount)||amount<=0){alert('จำนวนเงินต้องมากกว่า 0');return;}
   state.monthlyExpenses.push({ id: Date.now(), name, amount, dueday, ...link, month: mk2 });
-  saveData();
+  await saveData();
   ['mo-name','mo-amount','mo-dueday'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('mo-add-form').style.display = 'none';
   render();
 }
 
-function deleteMonthlyExpense(id) {
+async function deleteMonthlyExpense(id) {
   const e=state.monthlyExpenses.find(x=>x.id===id);if(!e)return;
   try { for(const key of Object.keys(state.monthlyStatus).filter(k=>k.endsWith('-'+id)&&state.monthlyStatus[k]))assertMonthlyReversible(e,key); }
   catch(err){alert(err.message);return;}
   if(!confirm('ลบรายการนี้ และย้อนการชำระที่เชื่อมไว้ด้วย?'))return;
   for(const key of Object.keys(e.payments||{}))undoMonthly(e,key);
   state.monthlyExpenses=state.monthlyExpenses.filter(x=>x.id!==id);
-  saveData();render();
+  await saveData();render();
 }
 
-function toggleMonthlyPaid(id) {
+async function toggleMonthlyPaid(id) {
   const e=state.monthlyExpenses.find(x=>x.id===id); if(!e)return;
   const key=monthlyKey(e);
   try { if(state.monthlyStatus[key])undoMonthly(e,key); else applyMonthly(e,key); }
   catch(err){alert(err.message);return;}
-  saveData();render();
+  await saveData();render();
 }
 
 function exportData() {
@@ -1302,15 +1457,15 @@ function exportData() {
 }
 
 function importData(e) {
-  const file = e.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    try {
-      const d = JSON.parse(ev.target.result);
-      if (!confirm('นำเข้าข้อมูลจะแทนที่ข้อมูลปัจจุบัน ยืนยัน?')) return;
-      Object.assign(state, { transactions: d.transactions||[], creditCards: d.creditCards||[], ccTransactions: d.ccTransactions||[], loans: d.loans||[], loanTransactions: d.loanTransactions||[], monthlyExpenses: d.monthlyExpenses||[], monthlyStatus: d.monthlyStatus||{} });
-      saveData(); render(); alert('นำเข้าสำเร็จ');
-    } catch(err) { alert('ไฟล์ไม่ถูกต้อง'); }
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    let data;try{data=JSON.parse(ev.target.result);}catch(err){alert('ไฟล์ไม่ถูกต้อง');return;}
+    performBudgetMutation(async()=>{
+      if(!confirm('นำเข้าข้อมูลจะแทนที่ข้อมูลปัจจุบัน ยืนยัน?'))return;
+      Object.assign(state,{transactions:data.transactions||[],creditCards:data.creditCards||[],ccTransactions:data.ccTransactions||[],loans:data.loans||[],loanTransactions:data.loanTransactions||[],monthlyExpenses:data.monthlyExpenses||[],monthlyStatus:data.monthlyStatus||{}});
+      await saveData();render();alert('นำเข้าสำเร็จ');
+    });
   };
   reader.readAsText(file);
 }
@@ -1538,12 +1693,30 @@ function render() {
   }
 
   populateCCGroupSelect('cc-group-select', -1, '');
+  updateSyncControls();
+}
+
+
+// All data-changing entry points share one readiness check and one pending write.
+const editSnapshots={};
+for(const [opener,collection] of [['editTransaction','transactions'],['editCreditCard','creditCards'],['editMonthlyExpense','monthlyExpenses'],['editLoan','loans']]){
+  const original=globalThis[opener];
+  globalThis[opener]=function(id){const item=state[collection].find(x=>x.id===id);if(item)editSnapshots[collection]={id,record:syncClone(item)};return original(id);};
+}
+for(const name of ["saveEditTx","saveEditCC","saveEditMo","addTransaction","deleteTransaction","addCreditCard","deleteCreditCard","saveCCTransaction","deleteCCTx","editCCTx","addLoan","deleteLoan","saveEditLoan","saveLoanPayment","deleteLoanTx","editLoanTx","addMonthlyExpense","deleteMonthlyExpense","toggleMonthlyPaid"]){
+  const original=globalThis[name];
+  globalThis[name]=function(...args){return performBudgetMutation(async()=>{
+    const edit={saveEditTx:['transactions',editingTxId],saveEditCC:['creditCards',editingCCId],saveEditMo:['monthlyExpenses',editingMoId],saveEditLoan:['loans',editingLnId]}[name];
+    if(edit){const saved=editSnapshots[edit[0]],current=state[edit[0]].find(x=>x.id===edit[1]);if(saved && saved.id===edit[1]&&!syncEqual(saved.record,current))throw Error('รายการนี้เปลี่ยนไปหลังเปิดฟอร์ม กรุณาปิดแล้วเปิดแก้ไขใหม่จากข้อมูลล่าสุด');}
+    return await original(...args);
+  });};
 }
 
 (function init() {
   const today = new Date();
   document.getElementById('tx-date').value = today.toISOString().split('T')[0];
   document.getElementById('cc-pay-date').value = today.toISOString().split('T')[0];
+  if(localStorage.getItem('budget-local-mode')==='1'){syncState.mode='local';loadLocal();showConnectionStatus();return;}
   const cfg = localStorage.getItem('fb-config');
   const builtIn = {
     apiKey: "AIzaSyA5ObZ-_Nh5jpxAlunB15wNCdxMOSGfyTM",
