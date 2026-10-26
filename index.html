@@ -17,10 +17,13 @@
     @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
     .ms{font-family:'Material Symbols Rounded';font-style:normal;font-weight:normal;font-size:inherit;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-feature-settings:'liga';font-feature-settings:'liga';-webkit-font-smoothing:antialiased;font-variation-settings:'FILL' 1,'wght' 400,'GRAD' 0,'opsz' 24}
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-    ::-webkit-scrollbar{display:none}
-    html,body{height:100%}
-    body{background:var(--bg);font-family:'Sarabun',sans-serif;display:flex;justify-content:center;min-height:100vh}
-    .app{width:100%;max-width:430px;display:flex;flex-direction:column;position:relative;min-height:100vh}
+    .pages-wrap,.modal,#cc-history-modal-list{scrollbar-width:thin;scrollbar-color:var(--text-m) var(--surface)}
+    .pages-wrap::-webkit-scrollbar,.modal::-webkit-scrollbar,#cc-history-modal-list::-webkit-scrollbar{width:8px}
+    .pages-wrap::-webkit-scrollbar-track,.modal::-webkit-scrollbar-track,#cc-history-modal-list::-webkit-scrollbar-track{background:var(--surface)}
+    .pages-wrap::-webkit-scrollbar-thumb,.modal::-webkit-scrollbar-thumb,#cc-history-modal-list::-webkit-scrollbar-thumb{background:var(--text-m);border-radius:8px}
+    html,body{height:100%;overflow:hidden}
+    body{background:var(--bg);font-family:'Sarabun',sans-serif;display:flex;justify-content:center;height:100vh;height:100dvh;}
+    .app{width:100%;max-width:430px;display:flex;flex-direction:column;position:relative;height:100%;min-height:0;overflow:hidden}
     /* Top bar */
     .top-bar{flex-shrink:0;height:52px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 16px;gap:8px}
     .top-title{font-size:17px;font-weight:800;color:var(--text);letter-spacing:-.3px}
@@ -30,11 +33,11 @@
     .sync-dot{font-size:11px;white-space:nowrap;flex-shrink:0}
     .sync-ok{color:var(--pos)}.sync-off{color:var(--text-m)}.sync-err{color:var(--neg)}
     /* Pages */
-    .pages-wrap{flex:1;overflow-y:auto;overflow-x:hidden;padding-bottom:72px}
+    .pages-wrap{flex:1 1 0%;min-height:0;overflow-y:auto;overflow-x:hidden;padding-bottom:20px;scroll-padding:16px;-webkit-overflow-scrolling:touch}
     .page{display:none;animation:fadeUp .22s ease;padding-bottom:20px}
     .page.active{display:block}
     /* Tab bar */
-    .tab-bar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;height:62px;background:var(--surface);border-top:1px solid var(--border);display:flex;align-items:flex-start;padding-top:6px;z-index:50}
+    .tab-bar{position:relative;flex:0 0 auto;width:100%;max-width:430px;min-height:62px;min-height:calc(62px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--border);display:flex;align-items:flex-start;padding-top:6px;padding-bottom:env(safe-area-inset-bottom,0px);z-index:50}
     .tab-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;border:none;background:transparent;cursor:pointer;padding:6px 0;color:var(--text-m);transition:color .15s}
     .tab-btn.on{color:var(--accent)}
     .tab-btn .ms{font-size:22px;font-variation-settings:'FILL' 1}
@@ -622,7 +625,7 @@ if (sessionStorage.getItem('pin_ok') === '1') {
 <div class="modal-overlay hidden" id="modal-cc-history" onclick="if(event.target===this)closeModal('modal-cc-history')">
   <div class="modal" style="max-height:80vh;display:flex;flex-direction:column">
     <h3 id="cc-history-modal-title">ประวัติรายการ</h3>
-    <div id="cc-history-modal-list" style="overflow-y:auto;flex:1;margin:0 -4px"></div>
+    <div id="cc-history-modal-list" style="overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain;margin:0 -4px"></div>
     <div class="modal-actions" style="margin-top:10px">
       <button class="btn btn-outline btn-sm" onclick="closeModal('modal-cc-history')">ปิด</button>
     </div>
