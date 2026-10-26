@@ -1561,6 +1561,21 @@ function render() {
 })();
 </script>
 <script>
+// Forward desktop wheel input over the surrounding space to the main list.
+document.addEventListener('wheel',function desktopOutsideWheel(event){
+  if(event.defaultPrevented||event.ctrlKey||event.metaKey||!event.deltaY)return;
+  if(!window.matchMedia('(hover: hover) and (pointer: fine)').matches)return;
+  const target=event.target instanceof Element?event.target:null;
+  if(target && target.closest('.pages-wrap,.modal-overlay,input,textarea,select,button,a'))return;
+  const pin=document.getElementById('pin-overlay');
+  if(pin && getComputedStyle(pin).display!=='none')return;
+  if(document.querySelector('.modal-overlay:not(.hidden)'))return;
+  const list=document.querySelector('.pages-wrap');if(!list)return;
+  const scale=event.deltaMode===1?16:event.deltaMode===2?list.clientHeight:1;
+  event.preventDefault();list.scrollTop+=event.deltaY*scale;
+},{passive:false});
+</script>
+<script>
 
 function calculateMoneyExpression(source) {
   const input=String(source).replace(/×/g,'*').replace(/[÷]/g,'/').replace(/[−–]/g,'-').replace(/\s/g,'');
