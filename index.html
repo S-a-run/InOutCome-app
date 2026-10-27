@@ -192,6 +192,13 @@
     .hist-pay{background:var(--pos)}.hist-charge{background:var(--neg)}
     .app button:disabled{opacity:.5;cursor:wait}
     .chk[aria-disabled="true"]{opacity:.5;cursor:wait}
+    .rec-review-intro{margin:0 20px 14px;font-size:13px;color:var(--text-s);line-height:1.6}
+    .rec-review-row{margin:0 20px 12px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:12px}
+    .rec-review-row .tx-name{white-space:normal}.rec-review-problem{font-size:12px;color:var(--warn);margin:8px 0;overflow-wrap:anywhere}
+    .rec-field{display:flex;flex-direction:column;gap:6px;margin:12px 0;font-size:13px;color:var(--text)}
+    .rec-field input,.rec-field select{width:100%;min-width:0;background:var(--card);color:var(--text);border:1px solid var(--border);padding:10px;border-radius:8px;font:inherit}
+    .rec-check{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--text);line-height:1.5;margin:12px 0}.rec-check input{margin-top:4px;flex-shrink:0}
+    .rec-preview{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin:14px 0;color:var(--text);font-size:13px;line-height:1.7}
   </style>
 </head>
 <body>
@@ -489,11 +496,21 @@ if (sessionStorage.getItem('pin_ok') === '1') {
           <label class="io-btn" style="cursor:pointer"><span class="ms" style="color:var(--accent-t)">upload</span><span class="it">Import JSON</span><input type="file" accept=".json" onchange="importData(event)" style="display:none"></label>
         </div>
       </div>
+      <div style="padding:0 20px 16px"><button type="button" class="btn btn-primary btn-full" onclick="showReconciliation()">ตรวจและปรับยอดรายการเก่า</button></div>
       <div class="app-info">
         <div class="app-info-t">InOutCome</div>
         <div class="tx-sub">Version 1.0 · GitHub Pages</div>
         <div style="font-size:11px;color:var(--text-m);opacity:.5;margin-top:2px">s-a-run.github.io/InOutCome-app/</div>
       </div>
+    </div>
+
+
+    <div id="page-reconcile" class="page">
+      <div class="pg-hdr"><div class="pg-title">ตรวจรายการเก่า</div><button type="button" class="btn btn-outline btn-sm" onclick="showTab('settings')">กลับ</button></div>
+      <div class="rec-review-intro">ตรวจทีละรายการจากหลักฐานจริง ระบบจะไม่หักหนี้หรือเงินย้อนหลังเอง<br>รายการที่ไม่มีเดือนหรือบัญชีต้นทาง ต้องตรวจจากสำรองก่อน</div>
+      <div class="rec-review-intro" id="reconcile-count"></div>
+      <button type="button" class="btn btn-outline btn-sm" style="margin:0 20px 12px" onclick="downloadReconciliationBackup()">ดาวน์โหลดสำรองก่อนปรับล่าสุด</button>
+      <div id="reconcile-list"></div>
     </div>
 
   </div><!-- end pages-wrap -->
@@ -631,6 +648,33 @@ if (sessionStorage.getItem('pin_ok') === '1') {
     <div class="modal-actions" style="margin-top:10px">
       <button class="btn btn-outline btn-sm" onclick="closeModal('modal-cc-history')">ปิด</button>
     </div>
+  </div>
+</div>
+
+
+<div class="modal-overlay hidden" id="modal-reconcile">
+  <div class="modal rec-review-modal" role="dialog" aria-modal="true" aria-labelledby="rec-title">
+    <h3 id="rec-title">ตรวจรายการเก่า</h3><p class="tx-sub" id="rec-context"></p>
+    <div id="rec-form" oninput="invalidateReconciliationPreview()" onchange="invalidateReconciliationPreview()">
+      <label class="rec-field">บัญชีที่จ่าย<select id="rec-target" onchange="refreshReconciliationOptions()"></select></label>
+      <label class="rec-field">ยอดจ่ายจริงที่ยืนยัน (บาท)<input type="number" id="rec-amount" min="0.01" step="0.01" inputmode="decimal"></label>
+      <label class="rec-field">วันที่จ่ายจริง<input type="date" id="rec-date"></label>
+      <div id="rec-debt-fields">
+        <label class="rec-field">หนี้ในแอปถูกหักจากการจ่ายครั้งนี้แล้วหรือยัง?<select id="rec-debt-mode"><option value="">-- ต้องเลือกจากหลักฐาน --</option><option value="already">หักแล้ว — ไม่หักซ้ำ</option><option value="missing">ยังไม่หัก — ปรับลดครั้งนี้</option></select></label>
+        <label class="rec-field">ยอดที่ลดหนี้จริงจากการจ่ายครั้งนี้ (บาท)<input type="number" id="rec-applied" min="0" step="0.01" inputmode="decimal"></label>
+        <p class="tx-sub">ยอดนี้เป็นหลักฐานสำหรับย้อนรายการในอนาคต หากเคยจ่ายเกินหนี้ ให้ใส่เฉพาะส่วนที่ลดหนี้จริง</p>
+        <label class="rec-field">ยอดหนี้ปัจจุบันที่ยืนยันจากธนาคาร (ถ้ามี)<input type="number" id="rec-bank-debt" min="0" step="0.01" inputmode="decimal" placeholder="เว้นว่างได้ ถ้ากรอกต้องตรงกับยอดหลังปรับ"></label>
+      </div>
+      <div id="rec-history-fields"><label class="rec-field">ประวัติการชำระ<select id="rec-history"></select></label></div>
+      <label class="rec-field">รายจ่ายที่บันทึกไว้<select id="rec-cash"></select></label>
+      <label class="rec-check"><input type="checkbox" id="rec-adjust-cash"> ยืนยันให้แก้ยอดรายจ่ายเดิมที่เลือก หากไม่ตรงกับยอดจ่ายจริง</label>
+      <label class="rec-check"><input type="checkbox" id="rec-distinct"> ตรวจแล้วว่ารายการที่ต้องสร้างใหม่ไม่ซ้ำกับรายการเดิม</label>
+      <label class="rec-field">หมายเหตุการตรวจ (ไม่บังคับ)<input type="text" id="rec-reference" maxlength="500" placeholder="เช่น เทียบใบแจ้งยอดเดือนตุลาคมแล้ว"></label>
+    </div>
+    <button type="button" class="btn btn-outline btn-sm" onclick="previewReconciliation()">ดูผลก่อนปรับ</button>
+    <div id="rec-preview" class="rec-preview" role="status" aria-live="polite">ยังไม่มีตัวอย่างการปรับ</div>
+    <label class="rec-check"><input type="checkbox" id="rec-verified"> ฉันตรวจยอดและตัวเลือกทั้งหมดกับหลักฐานจริงแล้ว</label>
+    <div class="modal-actions"><button type="button" class="btn btn-primary btn-sm" id="rec-commit" onclick="commitReconciliation()">สำรองและยืนยันรายการนี้</button><button type="button" class="btn btn-outline btn-sm" onclick="closeModal('modal-reconcile')">ยกเลิก</button></div>
   </div>
 </div>
 
@@ -808,7 +852,8 @@ async function saveEditMo() {
   const amount=financeMoney(document.getElementById('edit-mo-amount').value),dueday=financeDay(document.getElementById('edit-mo-dueday').value)||1;
   const link=monthlySelection(document.getElementById('edit-mo-category').value),key=monthlyKey(e),paid=!!state.monthlyStatus[key];assertMonthlyReversible(e,key);
   if(paid&&link.targetType){const account=financeAccount(link.targetType,link.targetId),receipt=monthlyReceipt(e,key);let available=financeCents(account.debt||0,true);if(receipt.targetType===link.targetType&&String(receipt.targetId)===String(link.targetId))available+=financeCents(receipt.debtApplied,true);assertPaymentWithinDebt(financeCents(amount),available);}
-  if(paid)undoMonthly(e,key);Object.assign(e,{name,amount,dueday},link);if(paid)applyMonthly(e,key);
+  const paidDate=paid?monthlyReceipt(e,key).date:null;
+  if(paid)undoMonthly(e,key);Object.assign(e,{name,amount,dueday},link);if(paid)applyMonthly(e,key,paidDate);
   await saveData();closeModal('modal-mo');render();
 }
 
@@ -975,7 +1020,7 @@ function adoptBudget(raw,cache=true) {
 }
 function updateSyncControls() {
   const writable=syncState.loaded && (syncState.mode==='local'||(syncState.mode==='online'&&syncState.connected)) && !syncState.busy;
-  const actions=/\b(saveEditTx|saveEditCC|saveEditMo|addTransaction|deleteTransaction|addCreditCard|deleteCreditCard|saveCCTransaction|deleteCCTx|editCCTx|addLoan|deleteLoan|saveEditLoan|saveLoanPayment|deleteLoanTx|editLoanTx|addMonthlyExpense|deleteMonthlyExpense|toggleMonthlyPaid|importData)\s*\(/;
+  const actions=/\b(saveEditTx|saveEditCC|saveEditMo|addTransaction|deleteTransaction|addCreditCard|deleteCreditCard|saveCCTransaction|deleteCCTx|editCCTx|addLoan|deleteLoan|saveEditLoan|saveLoanPayment|deleteLoanTx|editLoanTx|addMonthlyExpense|deleteMonthlyExpense|toggleMonthlyPaid|importData|commitReconciliation)\s*\(/;
   document.querySelectorAll('button[onclick],.chk[onclick]').forEach(el=>{
     if(!actions.test(el.getAttribute('onclick')||''))return;
     if(el.tagName==='BUTTON')el.disabled=!writable;
@@ -999,6 +1044,7 @@ function assertCanMutate() {
 }
 async function performBudgetMutation(action) {
   try {assertCanMutate();} catch(err){alert(err.message);return false;}
+  syncState.reconcileExpected=null;
   syncState.busy=true;syncState.activeBase=syncClone(syncState.baseline);updateSyncControls();
   try {return await action();}
   catch(err){
@@ -1008,7 +1054,7 @@ async function performBudgetMutation(action) {
     alert(err.message||'บันทึกไม่สำเร็จ กรุณาตรวจการเชื่อมต่อ');return false;
   } finally {
     if(syncState.baseline && !syncEqual(captureBudget(),Object.fromEntries(BUDGET_KEYS.map(k=>[k,syncState.baseline[k]||{}]))))adoptBudget(syncState.baseline,false);
-    syncState.busy=false;syncState.activeBase=null;
+    syncState.busy=false;syncState.activeBase=null;syncState.reconcileExpected=null;
     if(syncState.pending){adoptBudget(syncState.pending);syncState.pending=null;}
     updateSyncControls();
     const modal=document.getElementById('modal-cc-history');
@@ -1048,6 +1094,7 @@ async function saveData() {
   if(!db||!syncState.connected||!syncState.loaded)throw Error('การเชื่อมต่อขาดหาย ยังไม่ได้บันทึก กรุณาลองใหม่เมื่อออนไลน์');
   const changes=budgetChanges(syncState.activeBase,desired);
   if(!changes.length)return;
+  const reconciliationExpected=syncState.reconcileExpected?syncClone(syncState.reconcileExpected):null;
   const generation=syncState.generation;
   let mergeError='';
   syncState.writing=true;showConnectionStatus();
@@ -1056,6 +1103,7 @@ async function saveData() {
       const operation=db.ref('budget').transaction(current=>{
         if(generation!==syncState.generation)return;
         try {
+          if(reconciliationExpected){const latest=normalizeBudget(current);if(!syncEqual(Object.fromEntries(BUDGET_KEYS.map(k=>[k,latest[k]])),reconciliationExpected))return;}
           const merged=mergeBudgetChanges(current,changes);
           if(!merged)return;
           return merged;
@@ -1438,12 +1486,12 @@ function undoMonthly(e,key) {
   state.loanTransactions=state.loanTransactions.filter(t=>t.monthlyPaymentKey!==key);
   delete e.payments[key]; delete state.monthlyStatus[key]; delete state.monthlyStatus[key+'-txid'];
 }
-function applyMonthly(e,key) {
+function applyMonthly(e,key,paidDate=null) {
   if(monthlyReceipt(e,key)||state.monthlyStatus[key])throw Error('รายการนี้มีหลักฐานชำระอยู่แล้ว กรุณาตรวจสถานะก่อนบันทึกซ้ำ');
   const link=monthlyTarget(e),amount=financeMoney(e.amount);
   const target=link.targetType?financeAccount(link.targetType,link.targetId):null;
   const month=key.slice(0,7),[y,m]=month.split('-').map(Number),day=Math.min(Math.max(1,Number(e.dueday)||1),new Date(y,m,0).getDate());
-  const date=financeDate(month+'-'+String(day).padStart(2,'0'));
+  const date=financeDate(paidDate||month+'-'+String(day).padStart(2,'0'));
   let txId,debtApplied=0;
   if(target){const result=createFinanceRecord(link.targetType,target,amount,'payment',date,'',{name:e.name,category:link.category,key,id:e.id});txId=result.expense.id;debtApplied=result.record.debtApplied;}
   else {txId=newFinanceId();state.transactions.push({id:txId,type:'expense',amount,name:e.name,date,monthKey:month,category:link.category,autoFromMonthly:true,monthlyPaymentKey:key,monthlyExpenseId:e.id});}
@@ -1507,6 +1555,222 @@ function importData(e) {
   };
   reader.readAsText(file);
 }
+
+/* ---- Manual legacy reconciliation: preview first, never infer past deductions ---- */
+let reconciliationPreview=null;
+let reconciliationOpenKey='';
+function reconciliationSnapshot() {return captureBudget();}
+function reconciliationExpenseOwner(tx) {
+  if(tx.monthlyPaymentKey)return tx.monthlyPaymentKey;
+  for(const [key,paid] of Object.entries(state.monthlyStatus))if(paid===true&&String(state.monthlyStatus[key+'-txid'])===String(tx.id))return key;
+  for(const e of state.monthlyExpenses)for(const [key,r] of Object.entries(e.payments||{}))if(String(r.txId)===String(tx.id))return key;
+  return '';
+}
+function reconciliationHistoryOwner(record) {
+  if(record.monthlyPaymentKey)return record.monthlyPaymentKey;
+  if(record.linkedTxId!==undefined){const tx=state.transactions.find(t=>String(t.id)===String(record.linkedTxId));if(tx)return reconciliationExpenseOwner(tx);}
+  return '';
+}
+function reconciliationCandidates() {
+  const list=[];
+  const paidKeys=new Set(Object.entries(state.monthlyStatus).filter(([key,value])=>value===true).map(([key])=>key));
+  for(const e of state.monthlyExpenses)for(const key of Object.keys(e.payments||{}))paidKeys.add(key);
+  for(const key of paidKeys){
+    const paid=state.monthlyStatus[key];const m=/^(\d{4}-\d{2})-(.+)$/.exec(key);if(!m)continue;
+    const e=state.monthlyExpenses.find(x=>String(x.id)===m[2]);
+    if(!e){list.push({key:'status|'+key,kind:'blocked',name:'สถานะชำระที่ไม่มีรายการรายเดือน',problem:key,blocked:'ไม่พบรายการต้นทาง ต้องตรวจจากไฟล์สำรองก่อน'});continue;}
+    let problem='';try{assertMonthlyReversible(e,key);if(paid!==true)problem='มีหลักฐานชำระ แต่สถานะรายเดือนยังไม่เป็นจ่ายแล้ว';const r=monthlyReceipt(e,key);if(r&&Number(e.amount)!==Number(r.amount))problem='ยอดในรายเดือนไม่ตรงกับหลักฐานชำระเดิม';}catch(err){problem=err.message;}
+    if(!problem)continue;
+    list.push({key:'monthly|'+key,kind:'monthly',id:e.id,statusKey:key,month:m[1],name:e.name,amount:e.amount,date:(e.payments&&e.payments[key]&&e.payments[key].date)||'',problem,blocked:!e.month?'รายการเดิมนี้ใช้ร่วมหลายเดือนและไม่มีเดือนกำกับ ต้องแยกรายเดือนจากหลักฐานก่อน':e.month!==m[1]?'เดือนของรายการไม่ตรงกับสถานะชำระ ต้องตรวจข้อมูลก่อน':''});
+  }
+  for(const kind of ['cc','ln'])for(const record of financeHistory(kind)){
+    if(kind==='cc'&&record.type!=='payment')continue;
+    if(reconciliationHistoryOwner(record))continue;
+    let problem='';try{financeApplied(record);if(!financeLinkedExpense(kind,record))problem='ยังไม่พบรายจ่ายที่เชื่อมกับประวัตินี้';}catch(err){problem=err.message;}
+    if(!problem)continue;
+    const account=(kind==='cc'?state.creditCards:state.loans).find(x=>String(x.id)===String(kind==='cc'?record.cardId:record.loanId));
+    list.push({key:kind+'|'+record.id,kind,id:record.id,name:(kind==='cc'?'ชำระบัตร: ':'ชำระสินเชื่อ: ')+(account?account.name:record.cardName||record.loanName||''),amount:record.amount,date:record.date,month:(record.date||'').slice(0,7),target:account?kind+':'+account.id:'',problem,blocked:account?'':'บัญชีต้นทางถูกลบไปแล้ว ต้องกู้คืนหรือตรวจบัญชีต้นทางก่อน'});
+  }
+  for(const tx of state.transactions){
+    if(!tx.autoFromCC&&!tx.autoFromLoan&&!tx.ccTxId&&!tx.loanTxId)continue;
+    try{financeOrigin(tx);}catch(err){list.push({key:'orphan|'+tx.id,kind:'blocked',name:tx.name||'รายจ่ายไม่มีต้นทาง',amount:tx.amount,date:tx.date,problem:err.message,blocked:'ยังไม่ปรับรายจ่ายนี้โดยอัตโนมัติ สามารถเลือกเชื่อมจากรายการเก่าที่ตรวจหลักฐานแล้ว หรือกู้จากสำรอง'});}
+  }
+  return list;
+}
+function reconciliationCashBalance() {let total=0;for(const t of state.transactions){if(t.type!=='income'&&t.type!=='expense')throw Error('พบประเภทรายรับรายจ่ายไม่ถูกต้อง ต้องตรวจข้อมูลก่อน');const cents=financeCents(t.amount,true);total+=t.type==='income'?cents:-cents;if(!Number.isSafeInteger(total))throw Error('ยอดรวมสูงเกินไป');}return total;}
+function buildReconciliationPlan(key,values) {
+  const candidate=reconciliationCandidates().find(c=>c.key===key);
+  if(!candidate||candidate.blocked)throw Error(candidate?candidate.blocked:'รายการนี้เปลี่ยนไปแล้ว กรุณาเปิดรายการล่าสุด');
+  const amount=financeMoney(values.amount),date=financeDate(values.date);
+  let targetType='',targetId='',account=null;
+  if(values.target!=='cash'){
+    const match=/^(cc|ln):(.+)$/.exec(values.target||'');if(!match)throw Error('กรุณาเลือกบัตร สินเชื่อ หรือรายจ่ายทั่วไป');
+    targetType=match[1];account=financeAccount(targetType,match[2]);targetId=account.id;
+  }
+  if(candidate.kind!=='monthly'&&values.target!==candidate.target)throw Error('ต้องใช้บัญชีต้นทางเดิมของประวัตินี้');
+  const monthly=candidate.kind==='monthly'?state.monthlyExpenses.find(e=>String(e.id)===String(candidate.id)):null;
+  let history=null;
+  if(targetType){
+    if(!values.history)throw Error('กรุณาเลือกประวัติเดิม หรือยืนยันว่าต้องสร้างประวัติใหม่');
+    if(values.history!=='new'){
+      history=financeHistory(targetType).find(r=>String(r.id)===String(values.history));
+      if(!history||String(targetType==='cc'?history.cardId:history.loanId)!==String(targetId)||(targetType==='cc'&&history.type!=='payment'))throw Error('ประวัติที่เลือกไม่ตรงกับบัญชีนี้');
+      const owner=reconciliationHistoryOwner(history);if(owner&&owner!==candidate.statusKey)throw Error('ประวัตินี้เป็นของรายเดือนรายการอื่นแล้ว');
+    }
+    if(candidate.kind!=='monthly'&&(!history||String(history.id)!==String(candidate.id)))throw Error('ต้องเลือกประวัติต้นทางเดิม ไม่สร้างรายการซ้ำ');
+  }else if(candidate.kind!=='monthly')throw Error('ประวัติชำระนี้ต้องผูกกับบัญชีเดิม');
+  let applied=0,debtBefore=null,debtAfter=null;
+  if(account){
+    if(values.debtMode!=='already'&&values.debtMode!=='missing')throw Error('กรุณายืนยันว่าหนี้เคยถูกหักแล้วหรือยัง');
+    if(values.applied===''||values.applied===undefined||values.applied===null)throw Error('กรุณาระบุยอดลดหนี้จริงจากหลักฐาน ใส่ 0 ได้หากไม่ได้ลดหนี้');
+    applied=financeCents(values.applied,true);if(applied>financeCents(amount))throw Error('ยอดลดหนี้จริงต้องไม่เกินยอดที่จ่าย');
+    const oldReceipt=monthly&&monthlyReceipt(monthly,candidate.statusKey);
+    for(const proof of [oldReceipt,history])if(proof&&proof.debtApplied!==undefined){
+      if(financeCents(proof.debtApplied,true)!==applied||values.debtMode!=='already')throw Error('มีหลักฐานลดหนี้อยู่แล้ว ต้องใช้ยอดเดิมและห้ามหักหนี้ซ้ำ');
+      if(proof===oldReceipt&&(proof.targetType!==targetType||String(proof.targetId)!==String(targetId)))throw Error('บัญชีไม่ตรงกับหลักฐานเดิม ต้องตรวจการผูกบัญชีก่อน');
+    }
+    debtBefore=financeCents(account.debt||0,true);debtAfter=debtBefore-(values.debtMode==='missing'?applied:0);
+    if(debtAfter<0)throw Error('ยอดที่จะลดมากกว่าหนี้ในแอป กรุณาตรวจว่าหักหนี้ไปแล้วหรือไม่');
+    if(values.bankDebt!==''&&values.bankDebt!==undefined&&financeCents(values.bankDebt,true)!==debtAfter)throw Error('หนี้หลังปรับไม่ตรงกับยอดที่ยืนยันจากธนาคาร กรุณาตรวจตัวเลือกก่อน');
+  }else {
+    const oldReceipt=monthly&&monthlyReceipt(monthly,candidate.statusKey);if(oldReceipt&&oldReceipt.targetType)throw Error('หลักฐานเดิมผูกกับหนี้ ไม่สามารถเปลี่ยนเป็นรายจ่ายทั่วไปโดยเดา');
+  }
+  if(!values.cashChoice)throw Error('กรุณาเลือกรายจ่ายเดิม หรือยืนยันว่าต้องสร้างรายจ่ายใหม่');
+  let expense=null;
+  if(values.cashChoice!=='new'){
+    expense=state.transactions.find(t=>String(t.id)===String(values.cashChoice));if(!expense||expense.type!=='expense')throw Error('ไม่พบรายจ่ายเดิมที่เลือก');
+    const owner=reconciliationExpenseOwner(expense);if(owner&&owner!==candidate.statusKey)throw Error('รายจ่ายนี้ผูกกับรายเดือนรายการอื่นแล้ว');
+    const linked=[];for(const kind of ['cc','ln'])for(const r of financeHistory(kind))if((r.linkedTxId!==undefined&&String(r.linkedTxId)===String(expense.id))||(kind==='cc'&&expense.ccTxId!==undefined&&String(expense.ccTxId)===String(r.id))||(kind==='ln'&&expense.loanTxId!==undefined&&String(expense.loanTxId)===String(r.id)))linked.push({kind,r});
+    if(linked.some(x=>!history||x.kind!==targetType||String(x.r.id)!==String(history.id)))throw Error('รายจ่ายนี้มีประวัติต้นทางอยู่แล้ว กรุณาเลือกประวัตินั้นแทนการสร้างใหม่');
+    if(financeCents(expense.amount)!==financeCents(amount)&&!values.adjustCash)throw Error('ยอดรายจ่ายเดิมไม่ตรง ต้องติ๊กยืนยันการแก้ยอดรายจ่ายเดิมก่อน');
+  }
+  if(history){
+    const linked=state.transactions.filter(t=>(history.linkedTxId!==undefined&&String(t.id)===String(history.linkedTxId))||(targetType==='cc'&&t.ccTxId!==undefined&&String(t.ccTxId)===String(history.id))||(targetType==='ln'&&t.loanTxId!==undefined&&String(t.loanTxId)===String(history.id)));
+    if(linked.length>1)throw Error('ประวัตินี้เชื่อมรายจ่ายหลายรายการ ต้องตรวจรายการซ้ำก่อน');
+    if(linked.length===1&&(!expense||String(linked[0].id)!==String(expense.id)))throw Error('ประวัตินี้มีรายจ่ายเดิมอยู่แล้ว ต้องเลือกเชื่อมรายจ่ายนั้น ไม่สร้างซ้ำ');
+  }
+  if(monthly){
+    const old=monthlyReceipt(monthly,candidate.statusKey),id=(old&&old.txId)||state.monthlyStatus[candidate.statusKey+'-txid'];
+    const original=id!==undefined?state.transactions.find(t=>String(t.id)===String(id)):null;
+    if(original&&(!expense||String(original.id)!==String(expense.id)))throw Error('รายเดือนนี้อ้างรายจ่ายเดิมอยู่แล้ว กรุณาเลือกรายจ่ายนั้นเพื่อไม่หักเงินซ้ำ');
+  }
+  const cashDelta=financeCents(amount)-(expense?financeCents(expense.amount):0),balanceBefore=reconciliationCashBalance();
+  const similarExpenses=state.transactions.filter(t=>t.type==='expense'&&(!expense||String(t.id)!==String(expense.id))&&Number(t.amount)===amount&&t.date===date).length;
+  const similarHistory=account?financeHistory(targetType).filter(r=>String(targetType==='cc'?r.cardId:r.loanId)===String(targetId)&&(!history||String(r.id)!==String(history.id))&&Number(r.amount)===amount&&r.date===date).length:0;
+  return {key,candidate:syncClone(candidate),snapshot:reconciliationSnapshot(),values:syncClone(values),targetType,targetId,historyId:history?history.id:null,expenseId:expense?expense.id:null,amount,date,applied:applied/100,debtBefore:debtBefore===null?null:debtBefore/100,debtAfter:debtAfter===null?null:debtAfter/100,balanceBefore:balanceBefore/100,balanceAfter:(balanceBefore-cashDelta)/100,cashDelta:cashDelta/100,similarExpenses,similarHistory,needsDistinct:!expense||!!account&&!history};
+}
+function saveReconciliationBackup(plan,id) {
+  const payload=Object.fromEntries(BUDGET_KEYS.map(k=>[k,syncClone(state[k])]));
+  payload._backupInfo={type:'before-reconciliation',version:1,id,createdAt:new Date().toISOString(),candidateKey:plan.key};
+  const key='budget-reconcile-backup-'+id,text=JSON.stringify(payload);
+  try{localStorage.setItem(key,text);if(localStorage.getItem(key)!==text)throw Error('ตรวจสำรองไม่สำเร็จ');localStorage.setItem('budget-reconcile-last-backup',key);}catch(err){throw Error('ยังสำรองข้อมูลก่อนปรับไม่ได้ จึงไม่เปลี่ยนยอด กรุณาตรวจพื้นที่เก็บข้อมูลในเครื่อง');}
+  return {key,payload};
+}
+function downloadReconciliationBackup(key) {
+  key=key||localStorage.getItem('budget-reconcile-last-backup');const text=key&&localStorage.getItem(key);if(!text){alert('ยังไม่มีสำรองก่อนปรับบนอุปกรณ์นี้');return;}
+  const blob=new Blob([text],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=key+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function applyReconciliationPlan(plan,id) {
+  if(!syncEqual(reconciliationSnapshot(),plan.snapshot))throw Error('ข้อมูลเปลี่ยนหลังแสดงตัวอย่าง กรุณาดูผลก่อนปรับใหม่อีกครั้ง');
+  const values=plan.values;
+  if(plan.needsDistinct&&!values.confirmDistinct)throw Error('กรุณาตรวจและยืนยันว่าการสร้างรายการใหม่จะไม่ซ้ำกับรายการเดิม');
+  const checked=buildReconciliationPlan(plan.key,values);
+  if(!syncEqual(checked,plan))throw Error('ข้อมูลไม่ตรงกับตัวอย่าง กรุณาตรวจใหม่ก่อนยืนยัน');
+  const verifiedAt=new Date().toISOString(),audit={id,verifiedAt,sourceKey:plan.key,amount:plan.amount,applied:plan.applied,debtMode:plan.targetType?values.debtMode:'none',debtBefore:plan.debtBefore,debtAfter:plan.debtAfter,cashDelta:plan.cashDelta,backupId:id,manualVerification:true,reference:(values.reference||'').slice(0,500)};
+  const account=plan.targetType?financeAccount(plan.targetType,plan.targetId):null;
+  if(account&&values.debtMode==='missing')account.debt=plan.debtAfter;
+  let expense=plan.expenseId!==null?state.transactions.find(t=>String(t.id)===String(plan.expenseId)):null;
+  if(!expense){expense={id:id+1,type:'expense',name:plan.candidate.name};state.transactions.push(expense);}
+  Object.assign(expense,{amount:plan.amount,type:'expense',date:plan.date,monthKey:plan.date.slice(0,7),reconciliation:syncClone(audit)});
+  delete expense.autoFromCC;delete expense.autoFromLoan;delete expense.ccTxId;delete expense.loanTxId;
+  let history=plan.historyId!==null?financeHistory(plan.targetType).find(r=>String(r.id)===String(plan.historyId)):null;
+  if(account){
+    if(!history){history={id,type:'payment',note:'ตรวจรายการเก่าจากหลักฐาน'};financeHistory(plan.targetType).push(history);}
+    Object.assign(history,{amount:plan.amount,date:plan.date,type:'payment',debtApplied:plan.applied,linkedTxId:expense.id,ledgerVersion:2,reconciliation:syncClone(audit)});
+    Object.assign(history,plan.targetType==='cc'?{cardId:account.id,cardName:account.name}:{loanId:account.id,loanName:account.name});
+  }
+  if(plan.candidate.kind==='monthly'){
+    const e=state.monthlyExpenses.find(x=>String(x.id)===String(plan.candidate.id)),key=plan.candidate.statusKey;
+    Object.assign(e,{amount:plan.amount,category:account?(plan.targetType==='cc'?'💳 ':'💸 ')+account.name:(/^[💳💸]/u.test(e.category||'')?'รายเดือน':e.category||'รายเดือน'),targetType:plan.targetType,targetId:plan.targetId});
+    Object.assign(expense,{name:e.name,category:e.category,autoFromMonthly:true,monthlyPaymentKey:key,monthlyExpenseId:e.id});
+    if(history)history.monthlyPaymentKey=key;
+    e.payments=e.payments||{};e.payments[key]={txId:expense.id,amount:plan.amount,debtApplied:plan.applied,targetType:plan.targetType,targetId:plan.targetId,date:plan.date,reconciliation:syncClone(audit)};
+    state.monthlyStatus[key]=true;state.monthlyStatus[key+'-txid']=expense.id;
+  }else{
+    expense.category=plan.targetType==='cc'?'บัตรเครดิต':'ผ่อน/สินเชื่อ';
+    Object.assign(expense,plan.targetType==='cc'?{autoFromCC:true,ccTxId:history.id}:{autoFromLoan:true,loanTxId:history.id});
+  }
+}
+async function commitReconciliation() {
+  const plan=reconciliationPreview;if(!plan)throw Error('กรุณาดูผลก่อนปรับก่อน');
+  if(!document.getElementById('rec-verified').checked)throw Error('กรุณายืนยันว่าได้ตรวจยอดกับหลักฐานจริงแล้ว');
+  if(!syncEqual(reconciliationSnapshot(),plan.snapshot))throw Error('ข้อมูลเปลี่ยนหลังแสดงตัวอย่าง กรุณาดูผลก่อนปรับใหม่');
+  if(plan.needsDistinct&&!plan.values.confirmDistinct)throw Error('กรุณาตรวจยืนยันว่าการสร้างใหม่ไม่ซ้ำ แล้วดูผลก่อนปรับใหม่');
+  if(!confirm('ยืนยันปรับเฉพาะรายการนี้ตามตัวอย่าง และสำรองข้อมูลก่อนปรับ?'))return;
+  const id=newFinanceId(),backup=saveReconciliationBackup(plan,id);
+  // Download is convenient; the verified local backup is the required safeguard.
+  try{downloadReconciliationBackup(backup.key);}catch(err){console.warn('ดาวน์โหลดสำรองอัตโนมัติไม่ได้ ยังมีสำรองในเครื่อง',err);}
+  syncState.reconcileExpected=syncClone(plan.snapshot);
+  applyReconciliationPlan(plan,id);await saveData();
+  reconciliationPreview=null;closeModal('modal-reconcile');render();alert('ตรวจและปรับรายการนี้สำเร็จแล้ว เก็บสำรองก่อนปรับไว้ในอุปกรณ์นี้ด้วย');
+}
+function signedReconciliationMoney(n) {return (n<0?'−':'')+fmt(n);}
+function renderReconciliationList() {
+  const root=document.getElementById('reconcile-list');if(!root)return;
+  root.replaceChildren();const candidates=reconciliationCandidates();
+  document.getElementById('reconcile-count').textContent='พบ '+candidates.length+' จุดที่ต้องตรวจ • รวมทุกเดือน';
+  if(!candidates.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='ไม่พบรายการที่ต้องตรวจจากการเชื่อมข้อมูล ทั้งนี้ยังควรเทียบยอดกับธนาคาร';root.appendChild(empty);return;}
+  for(const item of candidates){
+    const row=document.createElement('div');row.className='rec-review-row';
+    for(const [cls,text] of [['tx-name',item.name],['tx-sub',(item.date||item.month||'')+(item.amount!==undefined?' · '+signedReconciliationMoney(item.amount):'')],['rec-review-problem',item.blocked||item.problem]]){const el=document.createElement('div');el.className=cls;el.textContent=text;row.appendChild(el);}
+    if(!item.blocked){const button=document.createElement('button');button.className='btn btn-outline btn-sm';button.textContent='ตรวจรายการนี้';button.addEventListener('click',()=>openReconciliation(item.key));row.appendChild(button);}root.appendChild(row);
+  }
+}
+function showReconciliation() {showTab('reconcile');renderReconciliationList();document.querySelector('.pages-wrap').scrollTop=0;}
+function refreshReconciliationOptions() {
+  const candidate=reconciliationCandidates().find(c=>c.key===reconciliationOpenKey);if(!candidate)return;
+  const target=document.getElementById('rec-target').value,match=/^(cc|ln):(.+)$/.exec(target),select=document.getElementById('rec-history');select.replaceChildren(new Option('-- เลือกประวัติ --',''));
+  document.getElementById('rec-debt-fields').style.display=match?'block':'none';document.getElementById('rec-history-fields').style.display=match?'block':'none';
+  if(match){
+    select.add(new Option('ยังไม่มีประวัติ — สร้างจากหลักฐาน','new'));
+    for(const record of financeHistory(match[1]))if(String(match[1]==='cc'?record.cardId:record.loanId)===match[2]&&(match[1]!=='cc'||record.type==='payment')&&(!reconciliationHistoryOwner(record)||reconciliationHistoryOwner(record)===candidate.statusKey))select.add(new Option((record.date||'')+' · '+fmt(record.amount)+' · #'+record.id+(record.debtApplied!==undefined?' · ลดหนี้ตามหลักฐาน '+fmt(record.debtApplied):''),String(record.id)));
+    if(candidate.kind!=='monthly')select.value=String(candidate.id);
+  }
+  reconciliationPreview=null;document.getElementById('rec-preview').textContent='เลือกข้อมูลให้ครบ แล้วกดดูผลก่อนปรับ';
+}
+function openReconciliation(key) {
+  try{assertCanMutate();}catch(err){alert(err.message);return;}
+  const c=reconciliationCandidates().find(x=>x.key===key);if(!c||c.blocked){alert(c?c.blocked:'ไม่พบรายการที่ต้องตรวจแล้ว');return;}
+  reconciliationOpenKey=key;reconciliationPreview=null;
+  document.getElementById('rec-title').textContent=c.name;document.getElementById('rec-context').textContent=(c.month||'')+' · '+c.problem;
+  const target=document.getElementById('rec-target');target.replaceChildren(new Option('-- เลือกบัญชีที่จ่าย --',''),new Option('รายจ่ายทั่วไป ไม่ใช่หนี้','cash'));
+  for(const [kind,items] of [['cc',state.creditCards],['ln',state.loans]])for(const account of items)target.add(new Option((kind==='cc'?'บัตร: ':'สินเชื่อ: ')+account.name+(account.archived?' (ปิดใช้งาน)':''),kind+':'+account.id));
+  target.disabled=c.kind!=='monthly';target.value=c.target||'';
+  document.getElementById('rec-amount').value=c.amount||'';document.getElementById('rec-date').value=c.date||'';
+  const original=c.kind==='monthly'?monthlyReceipt(state.monthlyExpenses.find(e=>String(e.id)===String(c.id)),c.statusKey):financeHistory(c.kind).find(r=>String(r.id)===String(c.id));
+  document.getElementById('rec-applied').value=original&&original.debtApplied!==undefined?original.debtApplied:'';document.getElementById('rec-debt-mode').value='';document.getElementById('rec-bank-debt').value='';
+  const cash=document.getElementById('rec-cash');cash.replaceChildren(new Option('-- เลือกรายจ่าย --',''),new Option('ยังไม่มีรายจ่าย — สร้างรายจ่ายใหม่','new'));
+  for(const tx of state.transactions.filter(t=>t.type==='expense'))if(!reconciliationExpenseOwner(tx)||reconciliationExpenseOwner(tx)===c.statusKey)cash.add(new Option((tx.date||'')+' · '+fmt(tx.amount)+' · '+(tx.name||'')+' · #'+tx.id,String(tx.id)));
+  for(const id of ['rec-adjust-cash','rec-distinct','rec-verified'])document.getElementById(id).checked=false;
+  document.getElementById('rec-reference').value='';refreshReconciliationOptions();openModal('modal-reconcile');
+}
+function readReconciliationValues() {
+  const value=id=>document.getElementById(id).value;
+  return {target:value('rec-target'),amount:value('rec-amount'),date:value('rec-date'),history:value('rec-history'),debtMode:value('rec-debt-mode'),applied:value('rec-applied'),bankDebt:value('rec-bank-debt'),cashChoice:value('rec-cash'),adjustCash:document.getElementById('rec-adjust-cash').checked,confirmDistinct:document.getElementById('rec-distinct').checked,reference:value('rec-reference')};
+}
+function previewReconciliation() {
+  try{
+    const plan=buildReconciliationPlan(reconciliationOpenKey,readReconciliationValues());reconciliationPreview=plan;
+    const rows=['ยอดชำระที่ยืนยัน: '+fmt(plan.amount),'วันที่จ่ายจริง: '+plan.date];
+    if(plan.targetType)rows.push('หนี้ในแอป: '+fmt(plan.debtBefore)+' → '+fmt(plan.debtAfter),'ยอดลดหนี้จริงของการจ่ายครั้งนี้: '+fmt(plan.applied)+(plan.values.debtMode==='already'?' (หักแล้ว — ไม่หักซ้ำ)':' (ยังไม่หัก — จะลดตามยอดนี้)'));
+    rows.push('รายจ่าย: '+(plan.expenseId===null?'สร้างใหม่ '+fmt(plan.amount):'ใช้รายการเดิม #'+plan.expenseId+(plan.cashDelta?' และปรับส่วนต่าง '+signedReconciliationMoney(plan.cashDelta):' ไม่หักเงินซ้ำ')),'เงินคงเหลือสะสม: '+signedReconciliationMoney(plan.balanceBefore)+' → '+signedReconciliationMoney(plan.balanceAfter));
+    if(plan.targetType)rows.push('ประวัติ: '+(plan.historyId===null?'สร้างใหม่จากหลักฐาน':'ใช้ประวัติเดิม #'+plan.historyId));
+    if(plan.similarExpenses||plan.similarHistory)rows.push('โปรดตรวจรายการคล้ายกัน: รายจ่าย '+plan.similarExpenses+' / ประวัติ '+plan.similarHistory+' รายการ (ยอดและวันที่ตรงกัน แต่ยังไม่สรุปว่าเป็นรายการเดียวกัน)');
+    if(plan.needsDistinct&&!plan.values.confirmDistinct)rows.push('ก่อนยืนยัน ต้องติ๊กว่าตรวจแล้วว่าการสร้างใหม่ไม่ซ้ำ แล้วกดดูผลก่อนปรับอีกครั้ง');
+    rows.push('จะสำรองข้อมูลก่อนปรับ และปรับเฉพาะรายการนี้เมื่อกดยืนยัน');document.getElementById('rec-preview').textContent=rows.join('\n');
+  }catch(err){reconciliationPreview=null;document.getElementById('rec-preview').textContent=err.message;}
+}
+function invalidateReconciliationPreview() {reconciliationPreview=null;document.getElementById('rec-verified').checked=false;document.getElementById('rec-preview').textContent='ข้อมูลที่เลือกเปลี่ยนแล้ว กรุณากดดูผลก่อนปรับอีกครั้ง';}
 
 /* ---- Render ---- */
 function populateMoCategory() {
@@ -1731,6 +1995,7 @@ function render() {
   }
 
   populateCCGroupSelect('cc-group-select', -1, '');
+  renderReconciliationList();
   updateSyncControls();
 }
 
@@ -1741,7 +2006,7 @@ for(const [opener,collection] of [['editTransaction','transactions'],['editCredi
   const original=globalThis[opener];
   globalThis[opener]=function(id){const item=state[collection].find(x=>x.id===id);if(item)editSnapshots[collection]={id,record:syncClone(item)};return original(id);};
 }
-for(const name of ["saveEditTx","saveEditCC","saveEditMo","addTransaction","deleteTransaction","addCreditCard","deleteCreditCard","saveCCTransaction","deleteCCTx","editCCTx","addLoan","deleteLoan","saveEditLoan","saveLoanPayment","deleteLoanTx","editLoanTx","addMonthlyExpense","deleteMonthlyExpense","toggleMonthlyPaid"]){
+for(const name of ["saveEditTx","saveEditCC","saveEditMo","addTransaction","deleteTransaction","addCreditCard","deleteCreditCard","saveCCTransaction","deleteCCTx","editCCTx","addLoan","deleteLoan","saveEditLoan","saveLoanPayment","deleteLoanTx","editLoanTx","addMonthlyExpense","deleteMonthlyExpense","toggleMonthlyPaid","commitReconciliation"]){
   const original=globalThis[name];
   globalThis[name]=function(...args){return performBudgetMutation(async()=>{
     const edit={saveEditTx:['transactions',editingTxId],saveEditCC:['creditCards',editingCCId],saveEditMo:['monthlyExpenses',editingMoId],saveEditLoan:['loans',editingLnId]}[name];
