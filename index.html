@@ -289,9 +289,9 @@ if (sessionStorage.getItem('pin_ok') === '1') {
     <div id="page-overview" class="page active">
       <div class="bal-hero">
         <div>
-          <div class="bal-lbl">คงเหลือสะสม</div>
+          <div class="bal-lbl">คงเหลือสะสมถึงสิ้นเดือนที่เลือก</div>
           <div class="bal-amt" id="s-balance">฿0</div>
-          <div class="bal-sub">เดือนนี้: <span id="s-balance-month">฿0</span></div>
+          <div class="bal-sub">สุทธิเดือนที่เลือก: <span id="s-balance-month">฿0</span></div>
         </div>
         <div>
           <div class="bal-lbl" style="margin-bottom:4px">หนี้รวม</div>
@@ -787,6 +787,22 @@ async function confirmMonthlyPayment() {
   monthlyPaymentDraft=null;closeModal('modal-monthly-payment');render();
 }
 
+function signedMoney(n,showPlus=false) {
+  return (n<0?'−':showPlus&&n>0?'+':'')+fmt(n);
+}
+// Use the same accounting month as currentMonthTx; never include future months.
+function overviewTotals(year=state.currentYear,month=state.currentMonth) {
+  const selected=monthKey(year,month);
+  let incomeCents=0,expenseCents=0,balanceCents=0;
+  for(const t of state.transactions){
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(t.monthKey||'')||t.monthKey>selected)continue;
+    const cents=Math.round(Number(t.amount)*100);
+    if(!Number.isFinite(cents)||!['income','expense'].includes(t.type))continue;
+    balanceCents+=t.type==='income'?cents:-cents;
+    if(t.monthKey===selected){if(t.type==='income')incomeCents+=cents;else expenseCents+=cents;}
+  }
+  return {income:incomeCents/100,expense:expenseCents/100,monthNet:(incomeCents-expenseCents)/100,balance:balanceCents/100};
+}
 function currentMonthTx() {
   const key = monthKey(state.currentYear, state.currentMonth);
   return state.transactions.filter(t => t.monthKey === key);
@@ -2065,7 +2081,7 @@ async function commitReconciliation() {
   applyReconciliationPlan(plan,id);await saveData();
   reconciliationPreview=null;closeModal('modal-reconcile');render();alert('ตรวจและปรับรายการนี้สำเร็จแล้ว เก็บสำรองก่อนปรับไว้ในอุปกรณ์นี้ด้วย');
 }
-function signedReconciliationMoney(n) {return (n<0?'−':'')+fmt(n);}
+function signedReconciliationMoney(n) {return signedMoney(n);}
 function renderReconciliationList() {
   const root=document.getElementById('reconcile-list');if(!root)return;
   root.replaceChildren();const candidates=reconciliationCandidates();
@@ -2159,21 +2175,21 @@ function render() {
   document.getElementById('currentMonthLabel').textContent = MONTHS_TH[state.currentMonth] + ' ' + (state.currentYear + 543);
 
   const txs = currentMonthTx();
-  const income = txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-  const expense = txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const totals=overviewTotals();
+  const {income,expense}=totals;
   const totalDebt = state.creditCards.reduce((s,c)=>s+(c.debt||0),0) + state.loans.reduce((s,l)=>s+(l.debt||0),0);
   populateMoCategory();
-  const cumulativeBalance = state.transactions.reduce((s,t)=>t.type==='income'?s+t.amount:s-t.amount, 0);
+  const cumulativeBalance = totals.balance;
 
   document.getElementById('s-income').textContent = fmt(income);
   document.getElementById('s-expense').textContent = fmt(expense);
   const balEl = document.getElementById('s-balance');
-  balEl.textContent = fmt(cumulativeBalance);
+  balEl.textContent = signedMoney(cumulativeBalance);
   balEl.classList.toggle('neg', cumulativeBalance < 0);
   document.getElementById('s-debt').textContent = fmt(totalDebt);
-  const monthNet = income - expense;
+  const monthNet = totals.monthNet;
   const monthSpan = document.getElementById('s-balance-month');
-  monthSpan.textContent = (monthNet < 0 ? '-' : '+') + fmt(monthNet);
+  monthSpan.textContent = signedMoney(monthNet,true);
   monthSpan.style.color = monthNet < 0 ? 'var(--neg)' : 'var(--pos)';
 
   // Reminders describe today's real calendar, independently of the viewed report month.
