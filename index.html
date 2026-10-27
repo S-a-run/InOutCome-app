@@ -544,6 +544,7 @@ if (sessionStorage.getItem('pin_ok') === '1') {
 </div>
 
 <!-- Edit Transaction Modal -->
+<div class="modal-overlay hidden" id="modal-monthly-payment"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="monthly-payment-title"><h3 id="monthly-payment-title">ยืนยันการชำระรายเดือน</h3><p id="monthly-payment-name"></p><label class="rec-field">วันที่ชำระจริง<input type="date" id="monthly-payment-date"></label><p class="tx-sub">รายจ่ายและเงินคงเหลือจะลงตามวันที่ชำระจริง บิลยังอยู่ในเดือนเดิม</p><div class="modal-actions"><button type="button" class="btn btn-primary" onclick="confirmMonthlyPayment()">ยืนยันชำระ</button><button type="button" class="btn btn-outline" onclick="closeModal('modal-monthly-payment')">ยกเลิก</button></div></div></div>
 <div class="modal-overlay hidden" id="modal-tx">
   <div class="modal">
     <h3>แก้ไขรายการ</h3>
@@ -719,8 +720,8 @@ let editingTxType = 'income';
 let editingLnId = null;
 
 let state = {
-  currentMonth: new Date().getMonth(),
-  currentYear: new Date().getFullYear(),
+  currentMonth: Number(thaiToday().slice(5,7))-1,
+  currentYear: Number(thaiToday().slice(0,4)),
   transactions: [],
   creditCards: [],
   creditLimitGroups: [],
@@ -737,6 +738,55 @@ function fmt(n) {
   return '฿' + Math.abs(n).toLocaleString('th-TH', {minimumFractionDigits: 0, maximumFractionDigits: 2});
 }
 function monthKey(y, m) { return y + '-' + String(m+1).padStart(2,'0'); }
+
+// Calendar dates use Bangkok time; audit timestamps remain UTC instants.
+function thaiToday(now=new Date()) {
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now);
+  const part=k=>parts.find(p=>p.type===k).value;
+  return part('year')+'-'+part('month')+'-'+part('day');
+}
+function dueDateInMonth(month,day) {
+  const [y,m]=month.split('-').map(Number);
+  return month+'-'+String(Math.min(Math.max(1,Number(day)||1),new Date(Date.UTC(y,m,0)).getUTCDate())).padStart(2,'0');
+}
+function calendarDiff(date,today) { return Math.round((Date.parse(date+'T00:00:00Z')-Date.parse(today+'T00:00:00Z'))/86400000); }
+function dueReminders(today=thaiToday()) {
+  const result=[];
+  for(const e of state.monthlyExpenses){
+    if(!/^\d{4}-\d{2}$/.test(e.month||''))continue;
+    const date=dueDateInMonth(e.month,e.dueday),diff=calendarDiff(date,today),paid=!!state.monthlyStatus[e.month+'-'+e.id];
+    if(diff>7||(paid&&diff< -7))continue;
+    result.push({name:e.name,date,diff,status:paid?'paid':diff<0?'overdue':'upcoming',amount:e.amount});
+  }
+  // A recurring card due day is a schedule, not proof of an unpaid invoice.
+  for(const card of state.creditCards){
+    if(!card.dueday||card.archived||!(Number(card.debt)>0))continue;
+    let month=today.slice(0,7),date=dueDateInMonth(month,card.dueday);
+    if(date<today){const [y,m]=month.split('-').map(Number);const next=new Date(Date.UTC(y,m,1));month=monthKey(next.getUTCFullYear(),next.getUTCMonth());date=dueDateInMonth(month,card.dueday);}
+    const tracked=state.monthlyExpenses.some(e=>e.month===month&&monthlyTarget(e).targetType==='cc'&&String(monthlyTarget(e).targetId)===String(card.id));
+    const diff=calendarDiff(date,today);
+    if(!tracked&&diff<=7)result.push({name:card.name,date,diff,status:'schedule'});
+  }
+  return result.sort((a,b)=>a.date.localeCompare(b.date));
+}
+let monthlyPaymentDraft=null;
+function requestMonthlyPayment(id) {
+  const e=state.monthlyExpenses.find(e=>e.id===id);if(!e)return;
+  if(state.monthlyStatus[monthlyKey(e)])return toggleMonthlyPaid(id);
+  monthlyPaymentDraft={id,key:monthlyKey(e),record:syncClone(e)};
+  document.getElementById('monthly-payment-name').textContent=e.name+' · '+fmt(e.amount);
+  document.getElementById('monthly-payment-date').value=thaiToday();
+  openModal('modal-monthly-payment');
+}
+async function confirmMonthlyPayment() {
+  const draft=monthlyPaymentDraft;if(!draft)return;
+  const e=state.monthlyExpenses.find(e=>e.id===draft.id);
+  if(!e||!syncEqual(e,draft.record)||monthlyKey(e)!==draft.key||state.monthlyStatus[draft.key])throw Error('ข้อมูลรายการเปลี่ยน กรุณาปิดแล้วเปิดรายการใหม่');
+  const date=financeDate(document.getElementById('monthly-payment-date').value);
+  applyMonthly(e,draft.key,date);await saveData();
+  monthlyPaymentDraft=null;closeModal('modal-monthly-payment');render();
+}
+
 function currentMonthTx() {
   const key = monthKey(state.currentYear, state.currentMonth);
   return state.transactions.filter(t => t.monthKey === key);
@@ -752,7 +802,7 @@ function showTab(name) {
   document.getElementById('page-' + name).classList.add('active');
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   if (name === 'credit') populateCCGroupSelect('cc-group-select', -1, document.getElementById('cc-group-select').value||'');
-  if (name === 'loans') { const today = new Date().toISOString().split('T')[0]; document.getElementById('ln-pay-date').value = today; }
+  if (name === 'loans') { const today = thaiToday(); document.getElementById('ln-pay-date').value = today; }
 }
 
 /* ---- Category icons ---- */
@@ -1146,7 +1196,7 @@ function adoptBudget(raw,cache=true) {
 }
 function updateSyncControls() {
   const writable=syncState.loaded && (syncState.mode==='local'||(syncState.mode==='online'&&syncState.connected)) && !syncState.busy;
-  const actions=/\b(saveEditTx|saveEditCC|saveEditMo|addTransaction|deleteTransaction|addCreditCard|deleteCreditCard|saveCCTransaction|deleteCCTx|editCCTx|addLoan|deleteLoan|saveEditLoan|saveLoanPayment|deleteLoanTx|editLoanTx|addMonthlyExpense|deleteMonthlyExpense|toggleMonthlyPaid|importData|commitReconciliation|commitImport|saveLimitGroup|commitLegacyLimitMigration)\s*\(/;
+  const actions=/\b(saveEditTx|saveEditCC|saveEditMo|addTransaction|deleteTransaction|addCreditCard|deleteCreditCard|saveCCTransaction|deleteCCTx|editCCTx|addLoan|deleteLoan|saveEditLoan|saveLoanPayment|deleteLoanTx|editLoanTx|addMonthlyExpense|deleteMonthlyExpense|requestMonthlyPayment|confirmMonthlyPayment|toggleMonthlyPaid|importData|commitReconciliation|commitImport|saveLimitGroup|commitLegacyLimitMigration)\s*\(/;
   document.querySelectorAll('button[onclick],.chk[onclick]').forEach(el=>{
     if(!actions.test(el.getAttribute('onclick')||''))return;
     if(el.tagName==='BUTTON')el.disabled=!writable;
@@ -1608,11 +1658,11 @@ function applyMonthly(e,key,paidDate=null) {
   if(monthlyReceipt(e,key)||state.monthlyStatus[key])throw Error('รายการนี้มีหลักฐานชำระอยู่แล้ว กรุณาตรวจสถานะก่อนบันทึกซ้ำ');
   const link=monthlyTarget(e),amount=financeMoney(e.amount);
   const target=link.targetType?financeAccount(link.targetType,link.targetId):null;
-  const month=key.slice(0,7),[y,m]=month.split('-').map(Number),day=Math.min(Math.max(1,Number(e.dueday)||1),new Date(y,m,0).getDate());
-  const date=financeDate(paidDate||month+'-'+String(day).padStart(2,'0'));
+  const month=key.slice(0,7);
+  const date=financeDate(paidDate||thaiToday());
   let txId,debtApplied=0;
   if(target){const result=createFinanceRecord(link.targetType,target,amount,'payment',date,'',{name:e.name,category:link.category,key,id:e.id});txId=result.expense.id;debtApplied=result.record.debtApplied;}
-  else {txId=newFinanceId();state.transactions.push({id:txId,type:'expense',amount,name:e.name,date,monthKey:month,category:link.category,autoFromMonthly:true,monthlyPaymentKey:key,monthlyExpenseId:e.id});}
+  else {txId=newFinanceId();state.transactions.push({id:txId,type:'expense',amount,name:e.name,date,monthKey:date.slice(0,7),category:link.category,autoFromMonthly:true,monthlyPaymentKey:key,monthlyExpenseId:e.id});}
   Object.assign(e,link);e.payments=e.payments||{};e.payments[key]={txId,amount,debtApplied,targetType:link.targetType||'',targetId:link.targetId||'',date};
   state.monthlyStatus[key]=true;state.monthlyStatus[key+'-txid']=txId;
 }
@@ -1657,7 +1707,7 @@ async function toggleMonthlyPaid(id) {
 function exportData() {
   if(syncState.busy){alert('กรุณารอผลบันทึกก่อนส่งออกสำรอง');return;}
   if(!syncState.loaded){alert('ยังโหลดข้อมูลไม่ครบ จึงยังส่งออกสำรองไม่ได้');return;}
-  downloadBudgetJson(budgetBackupPayload(),'budget-backup-'+new Date().toISOString().split('T')[0]+'.json');
+  downloadBudgetJson(budgetBackupPayload(),'budget-backup-'+thaiToday()+'.json');
 }
 
 /* ---- Validated backup import ---- */
@@ -2126,18 +2176,17 @@ function render() {
   monthSpan.textContent = (monthNet < 0 ? '-' : '+') + fmt(monthNet);
   monthSpan.style.color = monthNet < 0 ? 'var(--neg)' : 'var(--pos)';
 
-  // CC alerts
-  const today = new Date().getDate();
-  const ccAlerts = state.creditCards.filter(c => c.dueday).map(c => {
-    const diff = c.dueday - today;
-    if (diff < 0 || diff > 7) return null;
-    const label = diff === 0 ? 'วันนี้!' : `อีก ${diff} วัน`;
-    return `<div class="alert-box">
-      <div class="alert-ico"><span class="ms">credit_card</span></div>
-      <div><div class="alert-title">บัตร ${c.name} ครบกำหนด ${label}</div><div class="alert-sub">วันที่ ${c.dueday}${c.debt?' · ยอดค้าง '+fmt(c.debt):''}</div></div>
-    </div>`;
-  }).filter(Boolean);
-  document.getElementById('cc-due-alert').innerHTML = ccAlerts.join('');
+  // Reminders describe today's real calendar, independently of the viewed report month.
+  const reminders=document.getElementById('cc-due-alert');reminders.replaceChildren();
+  for(const item of dueReminders()){
+    const box=document.createElement('div');box.className='alert-box';
+    const content=document.createElement('div'),title=document.createElement('div'),sub=document.createElement('div');title.className='alert-title';sub.className='alert-sub';
+    const label=item.status==='paid'?'ชำระแล้ว':item.status==='overdue'?'เกินกำหนด '+(-item.diff)+' วัน':item.diff===0?'ครบกำหนดวันนี้':'ครบกำหนดอีก '+item.diff+' วัน';
+    title.textContent=item.name+' · '+label;
+    sub.textContent=item.date+(item.amount!==undefined?' · '+fmt(item.amount):' · ตามวันครบกำหนดบัตร ยังไม่มีบิลรายเดือนยืนยันสถานะ');
+    if(item.status==='overdue')title.style.color='var(--neg)';
+    content.append(title,sub);box.append(content);reminders.append(box);
+  }
 
   document.getElementById('recent-list').innerHTML = txs.length ? txs.slice(0,5).map(t=>txItemHtml(t,false)).join('') : '<div class="empty">ยังไม่มีรายการเดือนนี้</div>';
 
@@ -2274,7 +2323,7 @@ function render() {
     document.getElementById('monthly-list').innerHTML = curMonthExpenses.map(e => {
       const paid = !!state.monthlyStatus[mk+'-'+e.id];
       return `<div class="m-row ${paid?'paid':''}">
-        <div class="chk ${paid?'on':'off'}" onclick="toggleMonthlyPaid(${e.id})">
+        <div class="chk ${paid?'on':'off'}" onclick="requestMonthlyPayment(${e.id})">
           <span style="font-size:13px;font-weight:800;color:${paid?'var(--bg)':'transparent'}">✓</span>
         </div>
         <div style="flex:1;min-width:0">
@@ -2309,7 +2358,7 @@ for(const [opener,collection] of [['editTransaction','transactions'],['editCredi
   const original=globalThis[opener];
   globalThis[opener]=function(id){const item=state[collection].find(x=>x.id===id);if(item)editSnapshots[collection]={id,record:syncClone(item)};return original(id);};
 }
-for(const name of ["saveEditTx","saveEditCC","saveEditMo","addTransaction","deleteTransaction","addCreditCard","deleteCreditCard","saveCCTransaction","deleteCCTx","editCCTx","addLoan","deleteLoan","saveEditLoan","saveLoanPayment","deleteLoanTx","editLoanTx","addMonthlyExpense","deleteMonthlyExpense","toggleMonthlyPaid","commitReconciliation","commitImport","saveLimitGroup","commitLegacyLimitMigration"]){
+for(const name of ["saveEditTx","saveEditCC","saveEditMo","addTransaction","deleteTransaction","addCreditCard","deleteCreditCard","saveCCTransaction","deleteCCTx","editCCTx","addLoan","deleteLoan","saveEditLoan","saveLoanPayment","deleteLoanTx","editLoanTx","addMonthlyExpense","deleteMonthlyExpense","toggleMonthlyPaid","confirmMonthlyPayment","commitReconciliation","commitImport","saveLimitGroup","commitLegacyLimitMigration"]){
   const original=globalThis[name];
   globalThis[name]=function(...args){return performBudgetMutation(async()=>{
     const edit={saveEditTx:['transactions',editingTxId],saveEditCC:['creditCards',editingCCId],saveEditMo:['monthlyExpenses',editingMoId],saveEditLoan:['loans',editingLnId]}[name];
@@ -2319,9 +2368,9 @@ for(const name of ["saveEditTx","saveEditCC","saveEditMo","addTransaction","dele
 }
 
 (function init() {
-  const today = new Date();
-  document.getElementById('tx-date').value = today.toISOString().split('T')[0];
-  document.getElementById('cc-pay-date').value = today.toISOString().split('T')[0];
+  const today = thaiToday();
+  document.getElementById('tx-date').value = today;
+  document.getElementById('cc-pay-date').value = today;
   if(localStorage.getItem('budget-local-mode')==='1'){syncState.mode='local';loadLocal();showConnectionStatus();return;}
   const cfg = localStorage.getItem('fb-config');
   const builtIn = {
