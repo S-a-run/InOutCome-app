@@ -199,6 +199,8 @@
     .rec-field input,.rec-field select{width:100%;min-width:0;background:var(--card);color:var(--text);border:1px solid var(--border);padding:10px;border-radius:8px;font:inherit}
     .rec-check{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--text);line-height:1.5;margin:12px 0}.rec-check input{margin-top:4px;flex-shrink:0}
     .rec-preview{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin:14px 0;color:var(--text);font-size:13px;line-height:1.7}
+    #import-file-name,#import-details{overflow-wrap:anywhere}
+    .import-count-row{color:var(--text);font-size:12px;line-height:1.6;padding:9px 0;border-bottom:1px solid var(--border)}
   </style>
 </head>
 <body>
@@ -493,10 +495,11 @@ if (sessionStorage.getItem('pin_ok') === '1') {
         <div class="sec-lbl">จัดการข้อมูล</div>
         <div class="io-btns">
           <button class="io-btn" onclick="exportData()"><span class="ms" style="color:var(--accent)">download</span><span class="it">Export JSON</span></button>
-          <label class="io-btn" style="cursor:pointer"><span class="ms" style="color:var(--accent-t)">upload</span><span class="it">Import JSON</span><input type="file" accept=".json" onchange="importData(event)" style="display:none"></label>
+          <label class="io-btn" style="cursor:pointer"><span class="ms" style="color:var(--accent-t)">upload</span><span class="it">Import JSON</span><input type="file" accept=".json" id="import-file" data-budget-import onchange="importData(event)" style="display:none"></label>
         </div>
       </div>
       <div style="padding:0 20px 16px"><button type="button" class="btn btn-primary btn-full" onclick="showReconciliation()">ตรวจและปรับยอดรายการเก่า</button></div>
+      <div style="padding:0 20px 16px"><button type="button" class="btn btn-outline btn-sm btn-full" onclick="downloadImportBackup()">ดาวน์โหลดสำรองก่อนนำเข้าล่าสุด</button></div>
       <div class="app-info">
         <div class="app-info-t">InOutCome</div>
         <div class="tx-sub">Version 1.0 · GitHub Pages</div>
@@ -675,6 +678,22 @@ if (sessionStorage.getItem('pin_ok') === '1') {
     <div id="rec-preview" class="rec-preview" role="status" aria-live="polite">ยังไม่มีตัวอย่างการปรับ</div>
     <label class="rec-check"><input type="checkbox" id="rec-verified"> ฉันตรวจยอดและตัวเลือกทั้งหมดกับหลักฐานจริงแล้ว</label>
     <div class="modal-actions"><button type="button" class="btn btn-primary btn-sm" id="rec-commit" onclick="commitReconciliation()">สำรองและยืนยันรายการนี้</button><button type="button" class="btn btn-outline btn-sm" onclick="closeModal('modal-reconcile')">ยกเลิก</button></div>
+  </div>
+</div>
+
+
+<div class="modal-overlay hidden" id="modal-import">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
+    <h3 id="import-title">ตรวจไฟล์ก่อนนำเข้า</h3><p class="tx-sub" id="import-file-name"></p>
+    <p class="rec-review-problem">การนำเข้าจะใช้ข้อมูลทั้งไฟล์แทนข้อมูลปัจจุบัน รวมถึงรายการที่ต้องลบตามตัวอย่างนี้</p>
+    <div id="import-counts"></div><div id="import-totals" class="rec-preview"></div>
+    <details><summary class="rec-field">ดูรายการที่จะเปลี่ยน</summary><div id="import-details"></div></details>
+    <div id="import-warnings" class="rec-preview"></div>
+    <label class="rec-check" id="import-warning-confirm"><input type="checkbox" id="import-warnings-ok"> ฉันตรวจคำเตือนและยืนยันจะนำเข้าข้อมูลเก่าเหล่านี้ไว้เพื่อตรวจต่อ ระบบจะไม่แก้ให้อัตโนมัติ</label>
+    <label class="rec-check" id="import-empty-confirm"><input type="checkbox" id="import-empty-ok"> ฉันตั้งใจใช้ไฟล์ว่างนี้เพื่อล้างข้อมูลแอปทั้งหมด</label>
+    <label class="rec-check"><input type="checkbox" id="import-reviewed"> ฉันตรวจจำนวนที่เพิ่ม เปลี่ยน ลบ และยอดก่อน–หลังแล้ว</label>
+    <p class="tx-sub" id="import-preview-note"></p>
+    <div class="modal-actions"><button type="button" class="btn btn-primary btn-sm" id="import-commit" onclick="commitImport()">สำรองและยืนยันนำเข้า</button><button type="button" class="btn btn-outline btn-sm" onclick="refreshImportPreview()">รีเฟรชตัวอย่าง</button><button type="button" class="btn btn-outline btn-sm" onclick="closeModal('modal-import')">ยกเลิก</button></div>
   </div>
 </div>
 
@@ -1020,13 +1039,14 @@ function adoptBudget(raw,cache=true) {
 }
 function updateSyncControls() {
   const writable=syncState.loaded && (syncState.mode==='local'||(syncState.mode==='online'&&syncState.connected)) && !syncState.busy;
-  const actions=/\b(saveEditTx|saveEditCC|saveEditMo|addTransaction|deleteTransaction|addCreditCard|deleteCreditCard|saveCCTransaction|deleteCCTx|editCCTx|addLoan|deleteLoan|saveEditLoan|saveLoanPayment|deleteLoanTx|editLoanTx|addMonthlyExpense|deleteMonthlyExpense|toggleMonthlyPaid|importData|commitReconciliation)\s*\(/;
+  const actions=/\b(saveEditTx|saveEditCC|saveEditMo|addTransaction|deleteTransaction|addCreditCard|deleteCreditCard|saveCCTransaction|deleteCCTx|editCCTx|addLoan|deleteLoan|saveEditLoan|saveLoanPayment|deleteLoanTx|editLoanTx|addMonthlyExpense|deleteMonthlyExpense|toggleMonthlyPaid|importData|commitReconciliation|commitImport)\s*\(/;
   document.querySelectorAll('button[onclick],.chk[onclick]').forEach(el=>{
     if(!actions.test(el.getAttribute('onclick')||''))return;
     if(el.tagName==='BUTTON')el.disabled=!writable;
     el.setAttribute('aria-disabled',String(!writable));
     el.title=writable?'':syncState.busy?'กำลังรอผลบันทึก':!syncState.loaded?'รอโหลดข้อมูลให้ครบก่อน':'ขณะนี้ออฟไลน์ จึงยังบันทึกไม่ได้';
   });
+  document.querySelectorAll('input[data-budget-import]').forEach(el=>{el.disabled=!writable;});
 }
 function showConnectionStatus() {
   if(syncState.writing){setSyncStatus(syncState.connected?'⬤ กำลังบันทึก...':'⬤ รอเชื่อมต่อเพื่อยืนยันการบันทึก','sync-off');return;}
@@ -1537,24 +1557,201 @@ async function toggleMonthlyPaid(id) {
 }
 
 function exportData() {
-  const blob = new Blob([JSON.stringify({ transactions: state.transactions, creditCards: state.creditCards, ccTransactions: state.ccTransactions, loans: state.loans, loanTransactions: state.loanTransactions, monthlyExpenses: state.monthlyExpenses, monthlyStatus: state.monthlyStatus }, null, 2)], {type:'application/json'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = 'budget-backup-' + new Date().toISOString().split('T')[0] + '.json'; a.click();
+  if(syncState.busy){alert('กรุณารอผลบันทึกก่อนส่งออกสำรอง');return;}
+  if(!syncState.loaded){alert('ยังโหลดข้อมูลไม่ครบ จึงยังส่งออกสำรองไม่ได้');return;}
+  downloadBudgetJson(budgetBackupPayload(),'budget-backup-'+new Date().toISOString().split('T')[0]+'.json');
 }
 
-function importData(e) {
-  const file=e.target.files[0];if(!file)return;
+/* ---- Validated backup import ---- */
+const BUDGET_FILE_VERSION=1;
+let importPreview=null;
+let importReadGeneration=0;
+function budgetBackupPayload(type='export',extra={}) {
+  return {...Object.fromEntries(BUDGET_KEYS.map(key=>[key,syncClone(state[key])])),_format:{app:'InOutCome',schemaVersion:BUDGET_FILE_VERSION,exportedAt:new Date().toISOString()},...(type==='export'?{}:{_backupInfo:{type,version:1,createdAt:new Date().toISOString(),...extra}})};
+}
+function downloadBudgetJson(payload,name) {
+  const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function validateBudgetImport(raw) {
+  const object=(v,path)=>{if(!v||typeof v!=='object'||Array.isArray(v))throw Error(path+': ต้องเป็น object');};
+  object(raw,'ไฟล์');let nodes=0;
+  function inspect(v,path,depth=0){
+    if(++nodes>250000||depth>20)throw Error('ไฟล์ซับซ้อนหรือมีข้อมูลมากเกินขอบเขตที่รองรับ');
+    if(v&&typeof v==='object')for(const key of Object.keys(v)){if(['__proto__','constructor','prototype'].includes(key))throw Error(path+': มีชื่อคีย์ที่ไม่อนุญาต');inspect(v[key],path+'.'+key,depth+1);}
+  }
+  inspect(raw,'ไฟล์');
+  for(const key of Object.keys(raw))if(!BUDGET_KEYS.includes(key)&&key!=='_format'&&key!=='_backupInfo')throw Error('ไฟล์มีหัวข้อที่ไม่รองรับ: '+key+' กรุณาใช้ไฟล์ Export ของแอป');
+  if(raw._format!==undefined){object(raw._format,'_format');if(raw._format.app!=='InOutCome'||raw._format.schemaVersion!==BUDGET_FILE_VERSION)throw Error('ไฟล์นี้เป็นของแอปอื่นหรือเวอร์ชันที่ยังไม่รองรับ');}
+  if(raw._backupInfo!==undefined){object(raw._backupInfo,'_backupInfo');if(raw._backupInfo.version!==undefined&&raw._backupInfo.version!==1)throw Error('เวอร์ชันไฟล์สำรองยังไม่รองรับ');}
+  const data={},warnings=[];
+  const fail=(path,msg)=>{throw Error(path+': '+msg);};
+  const id=(v,path)=>{if(!Number.isSafeInteger(v)||v<=0)fail(path,'รหัสต้องเป็นจำนวนเต็มบวกที่ถูกต้อง');};
+  const text=(v,path,required=false)=>{if(v===undefined&&!required)return;if(typeof v!=='string'||(required&&!v.trim())||v.length>5000)fail(path,'ข้อความว่าง ยาวเกินไป หรือชนิดข้อมูลไม่ถูกต้อง');if(/<(?:[A-Za-z!?]|\/[A-Za-z])/.test(v))fail(path,'พบข้อความรูปแบบ HTML กรุณาตรวจให้เป็นข้อความธรรมดาก่อนนำเข้า');};
+  const money=(v,path,zero=false)=>{if(typeof v!=='number')fail(path,'ยอดเงินต้องเป็นตัวเลข');try{financeMoney(v,zero);}catch(err){fail(path,err.message);}};
+  const optionalMoney=(v,path)=>{if(v!==undefined)money(v,path,true);};
+  const date=(v,path)=>{try{financeDate(v);}catch(err){fail(path,'วันที่ไม่ถูกต้อง ต้องเป็น YYYY-MM-DD');}};
+  const month=(v,path)=>{if(typeof v!=='string'||!/^\d{4}-(0[1-9]|1[0-2])$/.test(v))fail(path,'เดือนต้องเป็น YYYY-MM');};
+  const statusKey=(v,path)=>{const match=/^(\d{4}-(?:0[1-9]|1[0-2]))-([1-9]\d*)$/.exec(v||'');if(!match)fail(path,'รหัสสถานะรายเดือนไม่ถูกต้อง');id(Number(match[2]),path);if(String(Number(match[2]))!==match[2])fail(path,'รูปแบบรหัสรายการไม่ถูกต้อง');return match;};
+  const optionalBoolean=(v,path)=>{if(v!==undefined&&typeof v!=='boolean')fail(path,'ต้องเป็น true หรือ false');};
+  const target=(v,path)=>{if(v.targetType!==undefined&&!['','cc','ln'].includes(v.targetType))fail(path+'.targetType','ประเภทบัญชีไม่ถูกต้อง');if(v.targetType){id(v.targetId,path+'.targetId');}else if(v.targetId!==undefined&&v.targetId!=='')fail(path+'.targetId','รหัสบัญชีไม่ตรงกับประเภทบัญชี');};
+  const maps={};
+  for(const key of BUDGET_KEYS){
+    if(!Object.prototype.hasOwnProperty.call(raw,key))fail(key,'ไฟล์ขาดหัวข้อนี้ จึงไม่แทนที่ด้วยข้อมูลว่างโดยเดา');
+    if(key==='monthlyStatus'){object(raw[key],key);data[key]=syncClone(raw[key]);continue;}
+    if(!Array.isArray(raw[key]))fail(key,'ต้องเป็น array ของรายการ');
+    maps[key]=new Map();
+    for(const [i,item] of raw[key].entries()){
+      const path=key+'['+i+']';object(item,path);id(item.id,path+'.id');if(maps[key].has(item.id))fail(path+'.id','รหัสซ้ำในหัวข้อนี้');maps[key].set(item.id,item);
+      if(key==='transactions'){
+        if(!['income','expense'].includes(item.type))fail(path+'.type','ต้องเป็น income หรือ expense');
+        money(item.amount,path+'.amount');text(item.name,path+'.name',true);date(item.date,path+'.date');month(item.monthKey,path+'.monthKey');
+        if(item.monthKey!==item.date.slice(0,7))warnings.push(path+': วันที่กับเดือนรายการไม่ตรงกัน ต้องตรวจหลังนำเข้า');
+        for(const field of ['category','note'])text(item[field],path+'.'+field);
+        for(const field of ['autoFromMonthly','autoFromCC','autoFromLoan'])optionalBoolean(item[field],path+'.'+field);
+        for(const field of ['ccTxId','loanTxId','monthlyExpenseId'])if(item[field]!==undefined)id(item[field],path+'.'+field);
+        if(item.monthlyPaymentKey!==undefined)statusKey(item.monthlyPaymentKey,path+'.monthlyPaymentKey');
+      }else if(key==='creditCards'||key==='loans'){
+        text(item.name,path+'.name',true);money(item.debt,path+'.debt',true);optionalBoolean(item.archived,path+'.archived');
+        for(const field of key==='creditCards'?['dueday','cutday']:['dueday'])if(item[field]!==undefined&&(!Number.isInteger(item[field])||item[field]<0||item[field]>31))fail(path+'.'+field,'วันต้องเป็น 0–31');
+        if(key==='creditCards'){
+          money(item.limit,path+'.limit',true);
+          if(item.limitGroup!==undefined&&item.limitGroup!==''){const group=typeof item.limitGroup==='string'?Number(item.limitGroup):item.limitGroup;id(group,path+'.limitGroup');if(String(group)!==String(item.limitGroup))fail(path+'.limitGroup','รหัสกลุ่มไม่ถูกต้อง');if(group===item.id)fail(path+'.limitGroup','บัตรผูกวงเงินกับตัวเองไม่ได้');}
+        }else {
+          optionalMoney(item.monthly,path+'.monthly');text(item.note,path+'.note');if(item.type!==undefined&&!['bnpl','cash','installment','other'].includes(item.type))fail(path+'.type','ประเภทสินเชื่อไม่ถูกต้อง');
+        }
+      }else if(key==='ccTransactions'||key==='loanTransactions'){
+        money(item.amount,path+'.amount');date(item.date,path+'.date');id(key==='ccTransactions'?item.cardId:item.loanId,path+'.accountId');
+        text(item.cardName,path+'.cardName');text(item.loanName,path+'.loanName');text(item.note,path+'.note');
+        if(key==='ccTransactions'&&!['payment','charge'].includes(item.type))fail(path+'.type','ประเภทประวัติบัตรไม่ถูกต้อง');
+        if(key==='loanTransactions'&&item.type!==undefined&&item.type!=='payment')fail(path+'.type','ประวัติสินเชื่อต้องเป็นการชำระ');
+        for(const field of ['debtApplied','debtBefore','debtAfter'])optionalMoney(item[field],path+'.'+field);
+        if(item.debtApplied!==undefined&&Math.round(item.debtApplied*100)>Math.round(item.amount*100))fail(path+'.debtApplied','ยอดลดหนี้เกินยอดชำระ');
+        if(item.linkedTxId!==undefined)id(item.linkedTxId,path+'.linkedTxId');
+        if(item.ledgerVersion!==undefined&&![1,2].includes(item.ledgerVersion))fail(path+'.ledgerVersion','เวอร์ชันประวัติยังไม่รองรับ');
+        if(item.monthlyPaymentKey!==undefined)statusKey(item.monthlyPaymentKey,path+'.monthlyPaymentKey');
+      }else if(key==='monthlyExpenses'){
+        text(item.name,path+'.name',true);money(item.amount,path+'.amount');text(item.category,path+'.category');target(item,path);
+        if(!Number.isInteger(item.dueday)||item.dueday<1||item.dueday>31)fail(path+'.dueday','วันต้องเป็น 1–31');
+        if(item.month!==undefined)month(item.month,path+'.month');else warnings.push(path+': รายการเก่าไม่มีเดือนกำกับ');
+        if(item.payments!==undefined){object(item.payments,path+'.payments');for(const [key,r] of Object.entries(item.payments)){
+          const match=statusKey(key,path+'.payments');object(r,path+'.payments.'+key);id(r.txId,path+'.payments.txId');money(r.amount,path+'.payments.amount');money(r.debtApplied,path+'.payments.debtApplied',true);date(r.date,path+'.payments.date');target(r,path+'.payments');
+          if(Math.round(r.debtApplied*100)>Math.round(r.amount*100))fail(path+'.payments.debtApplied','ยอดลดหนี้เกินยอดชำระ');if(Number(match[2])!==item.id)warnings.push(path+': รหัสหลักฐานชำระไม่ตรงกับรายการ');
+        }}
+      }
+    }
+    data[key]=syncClone(raw[key]);
+  }
+  for(const [key,value] of Object.entries(data.monthlyStatus)){
+    const isLink=key.endsWith('-txid'),base=isLink?key.slice(0,-5):key,match=statusKey(base,'monthlyStatus.'+key);
+    if(isLink)id(value,'monthlyStatus.'+key);else if(typeof value!=='boolean')fail('monthlyStatus.'+key,'สถานะต้องเป็น true หรือ false');
+    if(!maps.monthlyExpenses.has(Number(match[2])))warnings.push('monthlyStatus.'+key+': ไม่พบรายการรายเดือนต้นทาง');
+    else if(!isLink&&value===true){const e=maps.monthlyExpenses.get(Number(match[2]));if(!e.payments||!e.payments[base])warnings.push('monthlyStatus.'+key+': รายการเก่าจ่ายแล้วแต่ยังไม่มีหลักฐานลดหนี้/รายจ่าย ให้ตรวจในหน้ารายการเก่า');}
+    if(isLink&&!maps.transactions.has(value))warnings.push('monthlyStatus.'+key+': ไม่พบรายจ่ายที่เชื่อม');
+  }
+  for(const c of data.creditCards)if(c.limitGroup){const seen=new Set([c.id]);let next=Number(c.limitGroup),depth=0;while(next){if(seen.has(next)){warnings.push('บัตร #'+c.id+': วงเงินร่วมเชื่อมเป็นวงจร ต้องตรวจ');break;}seen.add(next);const anchor=maps.creditCards.get(next);if(!anchor){warnings.push('บัตร #'+c.id+': ไม่พบบัตรวงเงินร่วม');break;}if(++depth>1){warnings.push('บัตร #'+c.id+': วงเงินร่วมเชื่อมหลายชั้น ต้องตรวจ');break;}next=Number(anchor.limitGroup)||0;}}
+  for(const [key,kind] of [['ccTransactions','cc'],['loanTransactions','ln']])for(const r of data[key]){
+    if(!(kind==='cc'?maps.creditCards:maps.loans).has(kind==='cc'?r.cardId:r.loanId))warnings.push(key+' #'+r.id+': ไม่พบบัญชีต้นทาง');
+    if((kind==='ln'||r.type==='payment')&&r.debtApplied===undefined)warnings.push(key+' #'+r.id+': ประวัติเก่ายังไม่มีหลักฐานยอดลดหนี้จริง ต้องตรวจหลังนำเข้า');
+    if(r.linkedTxId!==undefined){const t=maps.transactions.get(r.linkedTxId);if(!t)warnings.push(key+' #'+r.id+': รายจ่ายที่เชื่อมหาย');else if(t.type!=='expense'||Number(t.amount)!==Number(r.amount))warnings.push(key+' #'+r.id+': ยอดรายจ่ายไม่ตรงกับประวัติ');}
+  }
+  for(const t of data.transactions){
+    if(t.ccTxId!==undefined&&!maps.ccTransactions.has(t.ccTxId))warnings.push('รายจ่าย #'+t.id+': ไม่พบประวัติบัตร');
+    if(t.loanTxId!==undefined&&!maps.loanTransactions.has(t.loanTxId))warnings.push('รายจ่าย #'+t.id+': ไม่พบประวัติสินเชื่อ');
+    if(t.monthlyExpenseId!==undefined&&!maps.monthlyExpenses.has(t.monthlyExpenseId))warnings.push('รายจ่าย #'+t.id+': ไม่พบรายเดือนต้นทาง');
+  }
+  const monthlyHistory=new Map(),cashClaims=new Map();
+  for(const key of ['ccTransactions','loanTransactions'])for(const r of data[key]){if(r.monthlyPaymentKey){const list=monthlyHistory.get(r.monthlyPaymentKey)||[];list.push(r);monthlyHistory.set(r.monthlyPaymentKey,list);}if(r.linkedTxId!==undefined){const list=cashClaims.get(r.linkedTxId)||[];list.push(r.id);cashClaims.set(r.linkedTxId,list);}if((key==='loanTransactions'||r.type==='payment')&&r.linkedTxId===undefined)warnings.push(key+' #'+r.id+': ยังไม่ผูกกับรายจ่าย');}
+  for(const [id,claims] of cashClaims)if(claims.length>1)warnings.push('รายจ่าย #'+id+': ถูกอ้างจากหลายประวัติ ต้องตรวจรายการซ้ำ');
+  for(const e of data.monthlyExpenses){
+    if(e.targetType&&!(e.targetType==='cc'?maps.creditCards:maps.loans).has(e.targetId))warnings.push('รายเดือน #'+e.id+': ไม่พบบัญชีที่ผูก');
+    for(const [key,r] of Object.entries(e.payments||{})){if(data.monthlyStatus[key]!==true)warnings.push('หลักฐาน '+key+': สถานะรายเดือนยังไม่เป็นจ่ายแล้ว');if(r.targetType&&(monthlyHistory.get(key)||[]).length!==1)warnings.push('หลักฐาน '+key+': ประวัติชำระที่เชื่อมไม่ครบหรือมีซ้ำ');const tx=maps.transactions.get(r.txId);if(!tx)warnings.push('หลักฐาน '+key+': รายจ่ายหาย');else if(Number(tx.amount)!==Number(r.amount))warnings.push('หลักฐาน '+key+': ยอดไม่ตรงกับรายจ่าย');if(r.targetType&&!(r.targetType==='cc'?maps.creditCards:maps.loans).has(r.targetId))warnings.push('หลักฐาน '+key+': บัญชีต้นทางหาย');}
+  }
+  return {data,warnings:[...new Set(warnings)],legacy:raw._format===undefined,format:raw._format?syncClone(raw._format):null};
+}
+function importMap(data,key) {return key==='monthlyStatus'?data[key]:Object.fromEntries(data[key].map(item=>[item.id,item]));}
+function importTotals(data) {
+  const sum=(items,get)=>{let total=0;for(const item of items){const amount=get(item);if(typeof amount!=='number'||!Number.isFinite(amount))return null;total+=Math.round(amount*100);if(!Number.isSafeInteger(total))return null;}return total/100;};
+  return {balance:sum(data.transactions,t=>typeof t.amount!=='number'?NaN:t.type==='income'?t.amount:t.type==='expense'?-t.amount:NaN),debt:sum([...data.creditCards,...data.loans],a=>a.debt||0)};
+}
+function buildImportPreview(raw,fileName='backup.json') {
+  const validated=validateBudgetImport(raw),snapshot=captureBudget(),summary=[],details=[];let changed=0;
+  for(const key of BUDGET_KEYS){
+    const before=snapshot[key],after=importMap(validated.data,key),row={key,added:0,modified:0,deleted:0,unchanged:0};
+    for(const id of new Set([...Object.keys(before),...Object.keys(after)])){
+      const a=before[id],b=after[id];let action;
+      if(a===undefined){row.added++;action='เพิ่ม';}else if(b===undefined){row.deleted++;action='ลบ';}else if(!syncEqual(a,b)){row.modified++;action='เปลี่ยน';}else{row.unchanged++;continue;}
+      changed++;details.push({key,id,action,name:(b&&typeof b==='object'&&(b.name||b.cardName||b.loanName))||(a&&typeof a==='object'&&(a.name||a.cardName||a.loanName))||id});
+    }
+    summary.push(row);
+  }
+  const current=Object.fromEntries(BUDGET_KEYS.map(k=>[k,syncClone(state[k])]));
+  const beforeTotals=importTotals(current),afterTotals=importTotals(validated.data);if(afterTotals.balance===null||afterTotals.debt===null)throw Error('ยอดรวมในไฟล์สูงเกินขอบเขตคำนวณของแอป จึงไม่นำเข้า');
+  return {...validated,snapshot,fileName,dataSignature:JSON.stringify(validated.data),summary,details,changed,totalDeleted:summary.reduce((n,r)=>n+r.deleted,0),empty:BUDGET_KEYS.every(k=>k==='monthlyStatus'?Object.keys(validated.data[k]).length===0:validated.data[k].length===0),before:beforeTotals,after:afterTotals};
+}
+function showImportPreview(plan) {
+  importPreview=plan;
+  document.getElementById('import-file-name').textContent=plan.fileName+(plan.legacy?' • สำรองรูปแบบเดิม':' • InOutCome เวอร์ชัน '+BUDGET_FILE_VERSION);
+  const labels={transactions:'รายรับ–รายจ่าย',creditCards:'บัตร',ccTransactions:'ประวัติบัตร',loans:'สินเชื่อ',loanTransactions:'ประวัติสินเชื่อ',monthlyExpenses:'รายเดือน',monthlyStatus:'สถานะ/ตัวเชื่อมรายเดือน'};
+  const counts=document.getElementById('import-counts');counts.replaceChildren();
+  for(const row of plan.summary){const line=document.createElement('div');line.className='import-count-row';line.textContent=labels[row.key]+': เพิ่ม '+row.added+' / เปลี่ยน '+row.modified+' / ลบ '+row.deleted+' / เหมือนเดิม '+row.unchanged;counts.appendChild(line);}
+  const format=n=>n===null?'คำนวณไม่ได้':signedReconciliationMoney(n);
+  document.getElementById('import-totals').textContent='เงินคงเหลือสะสม: '+format(plan.before.balance)+' → '+format(plan.after.balance)+'\nหนี้รวม: '+format(plan.before.debt)+' → '+format(plan.after.debt)+(plan.changed?'':'\nข้อมูลตรงกับปัจจุบัน ไม่จำเป็นต้องนำเข้า');
+  const warning=document.getElementById('import-warnings');warning.textContent=plan.warnings.length?'พบ '+plan.warnings.length+' จุดที่ต้องตรวจหลังนำเข้า:\n'+plan.warnings.slice(0,100).join('\n')+(plan.warnings.length>100?'\n… แสดง 100 จุดแรก':''):'ไม่พบคำเตือนด้านการอ้างอิงจากการตรวจไฟล์';
+  const details=document.getElementById('import-details');details.replaceChildren();
+  for(const item of plan.details.slice(0,200)){const el=document.createElement('div');el.className='tx-sub';const name=String(item.name);el.textContent=item.action+' '+labels[item.key]+' #'+item.id+' — '+name.slice(0,180)+(name.length>180?'…':'');details.appendChild(el);}
+  if(plan.details.length>200){const el=document.createElement('div');el.textContent='แสดง 200 จาก '+plan.details.length+' รายการเปลี่ยนแปลง';details.appendChild(el);}
+  for(const id of ['import-reviewed','import-warnings-ok','import-empty-ok'])document.getElementById(id).checked=false;
+  document.getElementById('import-warning-confirm').style.display=plan.warnings.length?'flex':'none';
+  document.getElementById('import-empty-confirm').style.display=plan.empty&&plan.changed?'flex':'none';
+  document.getElementById('import-preview-note').textContent='ยังไม่มีข้อมูลถูกเปลี่ยน จะสำรองก่อนแทนที่เมื่อกดยืนยันเท่านั้น';
+  openModal('modal-import');
+}
+function refreshImportPreview() {
+  if(!importPreview){alert('กรุณาเลือกไฟล์อีกครั้ง');return;}
+  try{assertCanMutate();showImportPreview(buildImportPreview({...importPreview.data,...(importPreview.format?{_format:importPreview.format}:{})},importPreview.fileName));}catch(err){alert(err.message);}
+}
+function importData(event) {
+  const input=event.target,file=input.files&&input.files[0];if(!file)return;
+  try{assertCanMutate();}catch(err){input.value='';alert(err.message);return;}
+  const generation=++importReadGeneration;importPreview=null;closeModal('modal-import');
+  if(typeof file.size==='number'&&file.size>10*1024*1024){input.value='';alert('ไฟล์ใหญ่เกิน 10 MB กรุณาใช้สำรองที่เหมาะกับแอป');return;}
   const reader=new FileReader();
+  reader.onerror=()=>{if(generation===importReadGeneration){input.value='';alert('อ่านไฟล์ไม่ได้ ยังไม่มีข้อมูลถูกเปลี่ยน');}};
   reader.onload=ev=>{
-    let data;try{data=JSON.parse(ev.target.result);}catch(err){alert('ไฟล์ไม่ถูกต้อง');return;}
-    performBudgetMutation(async()=>{
-      if(!confirm('นำเข้าข้อมูลจะแทนที่ข้อมูลปัจจุบัน ยืนยัน?'))return;
-      Object.assign(state,{transactions:data.transactions||[],creditCards:data.creditCards||[],ccTransactions:data.ccTransactions||[],loans:data.loans||[],loanTransactions:data.loanTransactions||[],monthlyExpenses:data.monthlyExpenses||[],monthlyStatus:data.monthlyStatus||{}});
-      await saveData();render();alert('นำเข้าสำเร็จ');
-    });
+    if(generation!==importReadGeneration)return;
+    try{assertCanMutate();const raw=JSON.parse(String(ev.target.result).replace(/^\uFEFF/,''));showImportPreview(buildImportPreview(raw,file.name||'backup.json'));}
+    catch(err){importPreview=null;alert('ไม่ได้นำเข้า: '+err.message+'\nข้อมูลเดิมยังอยู่ครบ');}
+    finally{input.value='';}
   };
   reader.readAsText(file);
 }
+function saveImportBackup(id,fileName) {
+  const payload=budgetBackupPayload('before-import',{id,fileName}),text=JSON.stringify(payload),key='budget-import-backup-'+id;
+  try{localStorage.setItem(key,text);if(localStorage.getItem(key)!==text)throw Error('ตรวจสำรองไม่ได้');localStorage.setItem('budget-import-last-backup',key);}catch(err){throw Error('ยังสำรองข้อมูลก่อนนำเข้าไม่ได้ จึงไม่แทนที่ข้อมูล กรุณาตรวจพื้นที่เก็บข้อมูลในเครื่อง');}
+  return {key,payload};
+}
+function downloadImportBackup(key) {
+  key=key||localStorage.getItem('budget-import-last-backup');const text=key&&localStorage.getItem(key);if(!text){alert('ยังไม่มีสำรองก่อนนำเข้าบนอุปกรณ์นี้');return;}
+  downloadBudgetJson(JSON.parse(text),key+'.json');
+}
+async function commitImport() {
+  const plan=importPreview;if(!plan)throw Error('กรุณาเลือกไฟล์และดูตัวอย่างก่อน');
+  if(!syncEqual(captureBudget(),plan.snapshot))throw Error('ข้อมูลเปลี่ยนหลังแสดงตัวอย่าง กรุณารีเฟรชตัวอย่างและตรวจใหม่');
+  if(!plan.changed){alert('ข้อมูลตรงกับปัจจุบัน ไม่จำเป็นต้องนำเข้า');return;}
+  if(!document.getElementById('import-reviewed').checked)throw Error('กรุณาตรวจและยืนยันจำนวนรายการที่จะเปลี่ยนก่อน');
+  if(plan.warnings.length&&!document.getElementById('import-warnings-ok').checked)throw Error('กรุณาตรวจและยืนยันคำเตือนของข้อมูลเก่าก่อน');
+  if(plan.empty&&!document.getElementById('import-empty-ok').checked)throw Error('ไฟล์นี้ว่าง กรุณายืนยันแยกว่าต้องการล้างข้อมูลทั้งหมด');
+  if(JSON.stringify(plan.data)!==plan.dataSignature)throw Error('ข้อมูลในตัวอย่างเปลี่ยนไป กรุณาเลือกไฟล์ใหม่');
+  const validated=validateBudgetImport({...plan.data,...(plan.format?{_format:plan.format}:{})});
+  if(!syncEqual(validated.data,plan.data))throw Error('ข้อมูลในตัวอย่างเปลี่ยนไป กรุณาเลือกไฟล์ใหม่');
+  if(!confirm('ยืนยันแทนที่ข้อมูลตามไฟล์นี้? จะลบ '+plan.totalDeleted+' รายการ/สถานะ และเก็บสำรองข้อมูลปัจจุบันก่อน'))return;
+  const backup=saveImportBackup(newFinanceId(),plan.fileName);
+  try{downloadImportBackup(backup.key);}catch(err){console.warn('ดาวน์โหลดสำรองไม่ได้ ยังเก็บสำรองในอุปกรณ์ไว้แล้ว',err);}
+  syncState.reconcileExpected=syncClone(plan.snapshot);
+  for(const key of BUDGET_KEYS)state[key]=syncClone(plan.data[key]);
+  await saveData();importPreview=null;closeModal('modal-import');render();alert('นำเข้าข้อมูลสำเร็จแล้ว เก็บสำรองก่อนนำเข้าไว้บนอุปกรณ์นี้ด้วย');
+}
+
 
 /* ---- Manual legacy reconciliation: preview first, never infer past deductions ---- */
 let reconciliationPreview=null;
@@ -1661,6 +1858,7 @@ function buildReconciliationPlan(key,values) {
 }
 function saveReconciliationBackup(plan,id) {
   const payload=Object.fromEntries(BUDGET_KEYS.map(k=>[k,syncClone(state[k])]));
+  payload._format={app:'InOutCome',schemaVersion:BUDGET_FILE_VERSION,exportedAt:new Date().toISOString()};
   payload._backupInfo={type:'before-reconciliation',version:1,id,createdAt:new Date().toISOString(),candidateKey:plan.key};
   const key='budget-reconcile-backup-'+id,text=JSON.stringify(payload);
   try{localStorage.setItem(key,text);if(localStorage.getItem(key)!==text)throw Error('ตรวจสำรองไม่สำเร็จ');localStorage.setItem('budget-reconcile-last-backup',key);}catch(err){throw Error('ยังสำรองข้อมูลก่อนปรับไม่ได้ จึงไม่เปลี่ยนยอด กรุณาตรวจพื้นที่เก็บข้อมูลในเครื่อง');}
@@ -2006,7 +2204,7 @@ for(const [opener,collection] of [['editTransaction','transactions'],['editCredi
   const original=globalThis[opener];
   globalThis[opener]=function(id){const item=state[collection].find(x=>x.id===id);if(item)editSnapshots[collection]={id,record:syncClone(item)};return original(id);};
 }
-for(const name of ["saveEditTx","saveEditCC","saveEditMo","addTransaction","deleteTransaction","addCreditCard","deleteCreditCard","saveCCTransaction","deleteCCTx","editCCTx","addLoan","deleteLoan","saveEditLoan","saveLoanPayment","deleteLoanTx","editLoanTx","addMonthlyExpense","deleteMonthlyExpense","toggleMonthlyPaid","commitReconciliation"]){
+for(const name of ["saveEditTx","saveEditCC","saveEditMo","addTransaction","deleteTransaction","addCreditCard","deleteCreditCard","saveCCTransaction","deleteCCTx","editCCTx","addLoan","deleteLoan","saveEditLoan","saveLoanPayment","deleteLoanTx","editLoanTx","addMonthlyExpense","deleteMonthlyExpense","toggleMonthlyPaid","commitReconciliation","commitImport"]){
   const original=globalThis[name];
   globalThis[name]=function(...args){return performBudgetMutation(async()=>{
     const edit={saveEditTx:['transactions',editingTxId],saveEditCC:['creditCards',editingCCId],saveEditMo:['monthlyExpenses',editingMoId],saveEditLoan:['loans',editingLnId]}[name];
