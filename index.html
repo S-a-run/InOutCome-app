@@ -347,6 +347,7 @@ if (sessionStorage.getItem('pin_ok') === '1') {
         <div class="pg-title">บัตรเครดิต</div>
         <button class="btn-gry" onclick="document.getElementById('cc-add-form').style.display=document.getElementById('cc-add-form').style.display==='none'?'block':'none'"><span class="ms">add</span></button>
       </div>
+      <button type="button" class="btn btn-outline btn-sm" style="margin:0 20px 12px" onclick="openLimitGroupManager()">จัดการวงเงินร่วม</button>
       <button class="rec-btn" onclick="openCCPayment(null)">
         <span class="ms">add_card</span><span class="rt">บันทึกรายการบัตร</span>
       </button>
@@ -364,9 +365,10 @@ if (sessionStorage.getItem('pin_ok') === '1') {
           <input type="number" id="cc-dueday" placeholder="วันครบกำหนดชำระ" min="1" max="31" inputmode="numeric">
         </div>
         <div class="form-row" style="align-items:center;gap:10px">
-          <label style="font-size:12px;color:var(--text-m);white-space:nowrap">วงเงินร่วมกับ:</label>
-          <select id="cc-group-select" style="flex:1"><option value="">ไม่มี (วงเงินของตัวเอง)</option></select>
+          <label style="font-size:12px;color:var(--text-m);white-space:nowrap">กลุ่มวงเงิน:</label>
+          <select id="cc-group-select" onchange="handleCCGroupSelection('cc',true)" style="flex:1"><option value="">ไม่มี (วงเงินของตัวเอง)</option></select>
         </div>
+        <div class="form-row" id="cc-new-group-row" style="display:none"><input type="text" id="cc-group-name" placeholder="ชื่อกลุ่ม เช่น KTB"></div><p class="tx-sub" id="cc-group-hint"></p>
         <button class="btn btn-primary btn-sm" onclick="addCreditCard()">+ เพิ่มบัตร</button>
       </div>
       <div id="cc-payment-form" class="form-section" style="display:none">
@@ -584,9 +586,10 @@ if (sessionStorage.getItem('pin_ok') === '1') {
       <input type="number" id="edit-cc-dueday" placeholder="วันครบกำหนดชำระ" min="1" max="31" inputmode="numeric">
     </div>
     <div class="form-row" style="align-items:center;gap:10px">
-      <label style="font-size:12px;color:var(--text-m);white-space:nowrap">วงเงินร่วมกับ:</label>
-      <select id="edit-cc-group" style="flex:1"><option value="">ไม่มี (วงเงินของตัวเอง)</option></select>
+      <label style="font-size:12px;color:var(--text-m);white-space:nowrap">กลุ่มวงเงิน:</label>
+      <select id="edit-cc-group" onchange="handleCCGroupSelection('edit-cc',true)" style="flex:1"><option value="">ไม่มี (วงเงินของตัวเอง)</option></select>
     </div>
+    <div class="form-row" id="edit-cc-new-group-row" style="display:none"><input type="text" id="edit-cc-group-name" placeholder="ชื่อกลุ่ม เช่น KTB"></div><p class="tx-sub" id="edit-cc-group-hint"></p>
     <div class="modal-actions">
       <button class="btn btn-primary btn-sm" onclick="saveEditCC()">บันทึก</button>
       <button class="btn btn-outline btn-sm" onclick="closeModal('modal-cc')">ยกเลิก</button>
@@ -697,6 +700,11 @@ if (sessionStorage.getItem('pin_ok') === '1') {
   </div>
 </div>
 
+
+<div class="modal-overlay hidden" id="modal-limit-groups"><div class="modal" role="dialog" aria-modal="true" aria-label="จัดการวงเงินร่วม"><h3>จัดการวงเงินร่วม</h3><p class="tx-sub">วงเงินกลางหนึ่งค่า หนี้รวมสมาชิกทุกใบ รวมบัตรปิดใช้งาน</p><button type="button" class="btn btn-primary btn-sm" onclick="openLimitGroupEditor()">สร้างกลุ่มใหม่</button><button type="button" class="btn btn-outline btn-sm" onclick="downloadLimitBackup()">สำรองก่อนย้ายล่าสุด</button><div id="limit-group-list"></div><button type="button" class="btn btn-outline btn-sm" onclick="closeModal('modal-limit-groups')">ปิด</button></div></div>
+<div class="modal-overlay hidden" id="modal-limit-editor"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="limit-editor-title"><h3 id="limit-editor-title">กลุ่มวงเงิน</h3><label class="rec-field">ชื่อกลุ่ม<input id="limit-editor-name" type="text"></label><label class="rec-field">วงเงินกลาง (บาท)<input id="limit-editor-limit" type="number" min="0" step="0.01" inputmode="decimal"></label><p class="tx-sub">แก้วงเงินจุดเดียว ทุกสมาชิกใช้ค่ากลางนี้ ไม่เปลี่ยนยอดหนี้</p><div class="modal-actions"><button type="button" class="btn btn-primary btn-sm" onclick="saveLimitGroup()">บันทึก</button><button type="button" class="btn btn-outline btn-sm" onclick="closeModal('modal-limit-editor');openLimitGroupManager()">ยกเลิก</button></div></div></div>
+<div class="modal-overlay hidden" id="modal-legacy-limits"><div class="modal" role="dialog" aria-modal="true" aria-label="ยืนยันกลุ่มวงเงินเดิม"><h3>ตรวจและย้ายกลุ่มเดิม</h3><div id="legacy-limit-members" class="rec-preview"></div><div oninput="if(legacyLimitPreview)legacyLimitPreview.plan=null;document.getElementById('legacy-limit-confirm').checked=false" onchange="if(legacyLimitPreview)legacyLimitPreview.plan=null;document.getElementById('legacy-limit-confirm').checked=false"><label class="rec-field">กลุ่มปลายทาง<select id="legacy-limit-target" onchange="changeLegacyLimitTarget()"></select></label><label class="rec-field">ชื่อกลุ่ม<input type="text" id="legacy-limit-name"></label><label class="rec-field">วงเงินจริงที่ยืนยัน (บาท)<input type="number" id="legacy-limit-amount" min="0" step="0.01" inputmode="decimal"></label></div><button type="button" class="btn btn-outline btn-sm" onclick="previewLegacyLimitMigration()">ดูผลก่อนย้าย</button><div id="legacy-limit-preview" class="rec-preview"></div><label class="rec-check"><input type="checkbox" id="legacy-limit-confirm"> ตรวจสมาชิกและวงเงินกับข้อมูลจริงแล้ว</label><div class="modal-actions"><button type="button" class="btn btn-primary btn-sm" onclick="commitLegacyLimitMigration()">สำรองและย้ายกลุ่มนี้</button><button type="button" class="btn btn-outline btn-sm" onclick="closeModal('modal-legacy-limits');openLimitGroupManager()">ยกเลิก</button></div></div></div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-app-compat.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-database-compat.min.js"></script>
 <script>
@@ -715,6 +723,7 @@ let state = {
   currentYear: new Date().getFullYear(),
   transactions: [],
   creditCards: [],
+  creditLimitGroups: [],
   ccTransactions: [],
   loans: [],
   loanTransactions: [],
@@ -742,7 +751,7 @@ function showTab(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
-  if (name === 'credit') populateCCGroupSelect('cc-group-select', -1, '');
+  if (name === 'credit') populateCCGroupSelect('cc-group-select', -1, document.getElementById('cc-group-select').value||'');
   if (name === 'loans') { const today = new Date().toISOString().split('T')[0]; document.getElementById('ln-pay-date').value = today; }
 }
 
@@ -836,18 +845,18 @@ function editCreditCard(id) {
   if (!c) return;
   editingCCId = id;
   document.getElementById('edit-cc-name').value = c.name;
-  document.getElementById('edit-cc-limit').value = c.limit || '';
+  document.getElementById('edit-cc-limit').value = c.limit ?? 0;
   document.getElementById('edit-cc-debt').value = c.debt || '';
   document.getElementById('edit-cc-cutday').value = c.cutday || '';
   document.getElementById('edit-cc-dueday').value = c.dueday || '';
-  populateCCGroupSelect('edit-cc-group', id, c.limitGroup || '');
+  populateCCGroupSelect('edit-cc-group', id, cardLimitSelection(c));
   openModal('modal-cc');
 }
 async function saveEditCC() {
-  const c=state.creditCards.find(x=>x.id===editingCCId);if(!c)return;
-  const name=document.getElementById('edit-cc-name').value.trim();if(!name)throw Error('กรุณากรอกชื่อบัตร');
-  const next={name,limit:financeMoney(document.getElementById('edit-cc-limit').value,true),debt:financeMoney(document.getElementById('edit-cc-debt').value,true),cutday:financeDay(document.getElementById('edit-cc-cutday').value),dueday:financeDay(document.getElementById('edit-cc-dueday').value),limitGroup:document.getElementById('edit-cc-group').value||''};
-  Object.assign(c,next);await saveData();closeModal('modal-cc');render();
+  const c=state.creditCards.find(x=>x.id===editingCCId);if(!c)return;const name=document.getElementById('edit-cc-name').value.trim();if(!name)throw Error('กรุณากรอกชื่อบัตร');
+  const next={name,debt:financeMoney(document.getElementById('edit-cc-debt').value,true),cutday:financeDay(document.getElementById('edit-cc-cutday').value),dueday:financeDay(document.getElementById('edit-cc-dueday').value)},choice=readCardLimitChoice('edit-cc',c),old=cardLimitSelection(c),target=choice.mode==='pool'?'pool:'+choice.poolId:choice.mode==='legacy'?old:choice.mode==='new'?'__new__':'';
+  if(old!==target&&!confirm('ยืนยันเปลี่ยนกลุ่มวงเงินของ '+c.name+' เป็น '+(choice.mode==='private'?'วงเงินเฉพาะบัตร '+fmt(choice.limit):choice.mode==='pool'?limitGroupById(choice.poolId).name:choice.name)+'? ประวัติและรายการชำระยังอ้างบัตรเดิม'))return;
+  syncState.reconcileExpected=captureBudget();Object.assign(c,next);applyCardLimitChoice(c,choice);await saveData();closeModal('modal-cc');render();
 }
 
 /* ---- Edit Monthly ---- */
@@ -876,34 +885,132 @@ async function saveEditMo() {
   await saveData();closeModal('modal-mo');render();
 }
 
-function populateCCGroupSelect(selectId, excludeId, currentGroup) {
-  const sel = document.getElementById(selectId);
-  sel.innerHTML = '<option value="">ไม่มี (วงเงินของตัวเอง)</option>';
-  state.creditCards.filter(c => c.id !== excludeId).forEach(c => {
-    const opt = document.createElement('option');
-    opt.value = c.id;
-    opt.textContent = c.name;
-    if (String(currentGroup) === String(c.id)) opt.selected = true;
-    sel.appendChild(opt);
-  });
+/* ---- Central credit limit groups ---- */
+let editingLimitGroup=null;
+let legacyLimitPreview=null;
+function validatedLimitGroupName(value) {const name=String(value||'').trim();if(!name||name.length>5000||/<(?:[A-Za-z!?]|\/[A-Za-z])/.test(name))throw Error('กรุณาระบุชื่อกลุ่มเป็นข้อความธรรมดา');return name;}
+function limitGroupById(id) {return state.creditLimitGroups.find(g=>String(g.id)===String(id));}
+function limitMembers(id) {return state.creditCards.filter(c=>String(c.creditLimitGroupId||'')===String(id));}
+function limitDebt(cards) {return cards.reduce((sum,c)=>sum+Math.round(Number(c.debt||0)*100),0)/100;}
+function limitText(value) {return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));}
+function legacyLimitComponents() {
+  const cards=new Map(state.creditCards.map(c=>[String(c.id),c])),adj=new Map(),missing=new Set();
+  const add=id=>{if(!adj.has(id))adj.set(id,new Set());};
+  for(const c of state.creditCards)if(c.limitGroup){const a=String(c.id),b=String(c.limitGroup);add(a);if(cards.has(b)){add(b);adj.get(a).add(b);adj.get(b).add(a);}else missing.add(a);}
+  const seen=new Set(),result=[];
+  for(const start of adj.keys()){
+    if(seen.has(start))continue;const todo=[start],ids=[];
+    while(todo.length){const id=todo.pop();if(seen.has(id))continue;seen.add(id);ids.push(id);for(const next of adj.get(id)||[])todo.push(next);}
+    const members=ids.map(id=>cards.get(id)).sort((a,b)=>a.id-b.id),roots=members.filter(c=>!c.limitGroup),issues=[];
+    if(ids.some(id=>missing.has(id)))issues.push('มีบัตรต้นทางที่หายไป');
+    if(!roots.length&&!ids.some(id=>missing.has(id)))issues.push('เชื่อมเป็นวงจร');
+    if(roots.length!==1)issues.push('ไม่พบต้นทางวงเงินเดียวที่ชัดเจน');
+    const limits=new Set(members.map(c=>Number(c.limit)));if(limits.size>1)issues.push('แต่ละใบมีวงเงินเดิมต่างกัน ต้องยืนยันวงเงินจริง');
+    if(members.some(c=>c.limitGroup&&members.some(other=>String(other.id)===String(c.limitGroup)&&other.limitGroup)))issues.push('มีการเชื่อมต่อหลายชั้น');
+    const blocked=members.some(c=>!Number.isFinite(Number(c.debt))||Number(c.debt)<0||!Number.isFinite(Number(c.limit))||Number(c.limit)<0)?'มีหนี้หรือวงเงินเดิมผิดรูปแบบ ต้องตรวจข้อมูลบัตรก่อนย้ายกลุ่ม':members.some(c=>c.creditLimitGroupId)?'มีข้อมูลกลุ่มใหม่ปนกับการเชื่อมเดิม ต้องตรวจการผูกบัตรก่อนย้าย':'';
+    const root=roots.length===1&&!ids.some(id=>missing.has(id))?roots[0]:null;
+    result.push({key:'legacy:'+members[0].id,members,root,issues,blocked,suggestedLimit:root?root.limit:null,name:root?'วงเงินร่วม '+root.name:'กลุ่มบัตรเดิม',totalDebt:limitDebt(members)});
+  }
+  return result;
+}
+function legacyLimitForCard(card) {return legacyLimitComponents().find(group=>group.members.some(c=>String(c.id)===String(card.id)))||null;}
+function cardLimitSelection(card) {if(card.creditLimitGroupId)return 'pool:'+card.creditLimitGroupId;const legacy=legacyLimitForCard(card);return legacy?legacy.key:'';}
+function getGroupInfo(card) {
+  if(card.creditLimitGroupId){
+    const pool=limitGroupById(card.creditLimitGroupId),members=limitMembers(card.creditLimitGroupId),mixed=members.some(c=>c.limitGroup);
+    return {anchorName:pool?pool.name:'ไม่พบกลุ่มวงเงิน',sharedLimit:pool?pool.limit:null,totalDebt:limitDebt(members),members,groupId:pool?pool.id:null,others:members.filter(c=>c.id!==card.id).map(c=>c.name).join(', '),unresolved:!pool||mixed||!Number.isFinite(Number(pool.limit))||Number(pool.limit)<0||members.some(c=>!Number.isFinite(Number(c.debt))||Number(c.debt)<0),legacy:false};
+  }
+  const old=legacyLimitForCard(card);if(!old)return null;
+  return {anchorName:old.name,sharedLimit:old.suggestedLimit,totalDebt:old.totalDebt,members:old.members,groupId:null,others:old.members.filter(c=>c.id!==card.id).map(c=>c.name).join(', '),unresolved:!old.root||!!old.blocked||!Number.isFinite(Number(old.suggestedLimit))||Number(old.suggestedLimit)<0,legacy:true,legacyKey:old.key};
+}
+function populateCCGroupSelect(selectId,excludeId,currentGroup='') {
+  const select=document.getElementById(selectId);if(!select)return;
+  select.replaceChildren(new Option('วงเงินเฉพาะบัตรนี้',''),new Option('สร้างกลุ่มวงเงินใหม่…','__new__'));
+  for(const pool of state.creditLimitGroups)select.add(new Option(pool.name+' · '+fmt(pool.limit),'pool:'+pool.id));
+  if(String(currentGroup).startsWith('legacy:'))select.add(new Option('กลุ่มเดิม — ยืนยันที่จัดการวงเงินร่วม',currentGroup));
+  if(currentGroup&&!Array.from(select.options).some(o=>o.value===String(currentGroup)))select.add(new Option('ไม่พบกลุ่มเดิม — ต้องตรวจ',String(currentGroup)));
+  select.value=String(currentGroup);handleCCGroupSelection(selectId==='cc-group-select'?'cc':'edit-cc');
+}
+function handleCCGroupSelection(prefix,userChange=false) {
+  const select=document.getElementById(prefix==='cc'?'cc-group-select':'edit-cc-group'),input=document.getElementById(prefix+'-limit'),row=document.getElementById(prefix+'-new-group-row'),hint=document.getElementById(prefix+'-group-hint'),value=select.value;
+  row.style.display=value==='__new__'?'flex':'none';
+  input.disabled=value.startsWith('pool:')||value.startsWith('legacy:');
+  if(value.startsWith('pool:')){
+    const pool=limitGroupById(value.slice(5));if(pool){input.value=pool.limit;select.dataset.poolSnapshot=JSON.stringify(pool);hint.textContent='ใช้วงเงินกลางของ '+pool.name+' · เปลี่ยนวงเงินได้ที่จัดการวงเงินร่วม';}else hint.textContent='ไม่พบกลุ่มที่อ้างอิง กรุณาตรวจข้อมูลก่อน';
+  }else if(value.startsWith('legacy:')){
+    const old=legacyLimitComponents().find(g=>g.key===value);input.value=old&&old.suggestedLimit!==null?old.suggestedLimit:'';hint.textContent='ยังใช้การเชื่อมเดิม กรุณาตรวจและยืนยันกลุ่มที่จัดการวงเงินร่วมก่อนย้ายสมาชิก';
+  }else {if(userChange&&value===''&&select.dataset.previousGroup)input.value='';hint.textContent=value==='__new__'?'ระบุชื่อกลุ่มและวงเงินกลาง สมาชิกทุกใบจะใช้วงเงินนี้':'วงเงินแยกของบัตรนี้ ใส่ 0 ได้หากไม่มีวงเงิน';}
+  select.dataset.previousGroup=value;
+}
+function readCardLimitChoice(prefix,card=null) {
+  const select=document.getElementById(prefix==='cc'?'cc-group-select':'edit-cc-group'),value=select.value||'',old=card?legacyLimitForCard(card):null;
+  if(old&&!card.creditLimitGroupId&&value!==old.key)throw Error('กรุณายืนยันกลุ่มเดิมทั้งกลุ่มก่อนย้ายหรือแยกบัตร เพื่อไม่ให้สมาชิกอื่นหลุดวงเงินร่วม');
+  if(value.startsWith('legacy:')){if(!card||!old||value!==old.key)throw Error('กลุ่มเดิมเปลี่ยนไป กรุณาเปิดแก้ไขใหม่');return {mode:'legacy',limit:card.limit};}
+  if(value.startsWith('pool:')){const pool=limitGroupById(value.slice(5));if(!pool)throw Error('ไม่พบกลุ่มวงเงินที่เลือก');if(select.dataset.poolSnapshot&&!syncEqual(JSON.parse(select.dataset.poolSnapshot),pool))throw Error('วงเงินกลางเปลี่ยนหลังเปิดฟอร์ม กรุณาเลือกกลุ่มใหม่ก่อนบันทึก');return {mode:'pool',poolId:pool.id,limit:pool.limit};}
+  if(value!==''&&value!=='__new__')throw Error('ต้องเลือกกลุ่มวงเงินกลาง ไม่เชื่อมบัตรต่อบัตร');
+  const raw=document.getElementById(prefix+'-limit').value;if(raw==='')throw Error('กรุณาระบุวงเงิน ใส่ 0 ได้');const limit=financeMoney(raw,true);
+  if(value==='__new__'){const name=validatedLimitGroupName(document.getElementById(prefix+'-group-name').value);return {mode:'new',name,limit};}
+  return {mode:'private',limit};
+}
+function applyCardLimitChoice(card,choice) {
+  if(choice.mode==='legacy')return;
+  card.limitGroup='';
+  if(choice.mode==='private'){card.limit=choice.limit;delete card.creditLimitGroupId;return;}
+  if(choice.mode==='new'){const group={id:newFinanceId(),name:choice.name,limit:choice.limit};state.creditLimitGroups.push(group);card.creditLimitGroupId=group.id;}
+  else card.creditLimitGroupId=choice.poolId;
+}
+function openLimitGroupManager() {renderLimitGroupManager();openModal('modal-limit-groups');}
+function renderLimitGroupManager() {
+  const root=document.getElementById('limit-group-list');if(!root)return;root.replaceChildren();
+  const row=(name,description,label,action)=>{const el=document.createElement('div');el.className='rec-review-row';const title=document.createElement('div');title.className='tx-name';title.textContent=name;el.appendChild(title);const text=document.createElement('p');text.className='tx-sub';text.textContent=description;el.appendChild(text);if(action){const button=document.createElement('button');button.className='btn btn-outline btn-sm';button.textContent=label;button.addEventListener('click',action);el.appendChild(button);}root.appendChild(el);};
+  for(const pool of state.creditLimitGroups){const members=limitMembers(pool.id);row(pool.name,'วงเงินกลาง '+fmt(pool.limit)+' · หนี้รวม '+fmt(limitDebt(members))+' · '+members.length+' ใบ (รวมบัตรปิดใช้งาน) · '+members.map(c=>c.name).join(', '),'แก้ชื่อ/วงเงินกลาง',()=>openLimitGroupEditor(pool.id));}
+  for(const old of legacyLimitComponents())row('กลุ่มเดิม: '+old.members.map(c=>c.name).join(', '),'หนี้รวม '+fmt(old.totalDebt)+' · '+(old.blocked||old.issues.join(' · ')||'ยังไม่ย้ายเข้าระบบวงเงินกลาง'),'ตรวจและยืนยันกลุ่มเดิม',old.blocked?null:()=>openLegacyLimitMigration(old.key));
+  for(const card of state.creditCards.filter(c=>c.creditLimitGroupId&&!limitGroupById(c.creditLimitGroupId)))row(card.name,'ไม่พบกลุ่มวงเงิน #'+card.creditLimitGroupId+' กรุณากู้กลุ่มจากสำรองหรือเลือกกลุ่มที่ถูกต้องในแก้ไขบัตร','',null);
+  if(!root.childNodes.length)row('ยังไม่มีกลุ่มวงเงินร่วม','สร้างกลุ่มใหม่ แล้วเลือกกลุ่มตอนเพิ่มหรือแก้ไขบัตร','',null);
+}
+function openLimitGroupEditor(id=null) {
+  const pool=id===null?null:limitGroupById(id);if(id!==null&&!pool){alert('ไม่พบกลุ่ม');return;}
+  editingLimitGroup=pool?syncClone(pool):null;document.getElementById('limit-editor-title').textContent=pool?'แก้วงเงินกลาง':'สร้างกลุ่มวงเงิน';document.getElementById('limit-editor-name').value=pool?pool.name:'';document.getElementById('limit-editor-limit').value=pool?pool.limit:'';closeModal('modal-limit-groups');openModal('modal-limit-editor');
+}
+async function saveLimitGroup() {
+  const name=validatedLimitGroupName(document.getElementById('limit-editor-name').value),raw=document.getElementById('limit-editor-limit').value;if(!name||raw==='')throw Error('กรุณาระบุชื่อกลุ่มและวงเงิน');const limit=financeMoney(raw,true);
+  const pool=editingLimitGroup?limitGroupById(editingLimitGroup.id):null;if(editingLimitGroup&&(!pool||!syncEqual(pool,editingLimitGroup)))throw Error('กลุ่มนี้เปลี่ยนไปแล้ว กรุณาเปิดแก้ไขใหม่');
+  if(pool&&!confirm('ยืนยันวงเงินกลาง '+fmt(pool.limit)+' → '+fmt(limit)+' สำหรับสมาชิก '+limitMembers(pool.id).length+' ใบ? หนี้และประวัติไม่เปลี่ยน'))return;
+  syncState.reconcileExpected=captureBudget();if(pool)Object.assign(pool,{name,limit});else state.creditLimitGroups.push({id:newFinanceId(),name,limit});await saveData();closeModal('modal-limit-editor');openLimitGroupManager();render();
+}
+function buildLegacyLimitPlan(key,target,name,rawLimit) {
+  const old=legacyLimitComponents().find(g=>g.key===key);if(!old||old.blocked)throw Error(old?old.blocked:'กลุ่มเดิมเปลี่ยนไปแล้ว');
+  let pool=null,limit;if(target){pool=limitGroupById(target);if(!pool)throw Error('ไม่พบกลุ่มปลายทาง');limit=financeMoney(pool.limit,true);name=pool.name;}else{if(!name.trim()||rawLimit==='')throw Error('กรุณายืนยันชื่อกลุ่มและวงเงินจริง');limit=financeMoney(rawLimit,true);name=validatedLimitGroupName(name);}
+  return {key,snapshot:captureBudget(),memberIds:old.members.map(c=>c.id),name,limit,poolId:pool?pool.id:null,totalDebt:old.totalDebt,destinationDebt:old.totalDebt+(pool?limitDebt(limitMembers(pool.id)):0),issues:old.issues};
+}
+function openLegacyLimitMigration(key) {
+  const old=legacyLimitComponents().find(g=>g.key===key);if(!old||old.blocked){alert(old?old.blocked:'ไม่พบกลุ่มเดิมแล้ว');return;}
+  legacyLimitPreview={key,opened:captureBudget(),plan:null};
+  document.getElementById('legacy-limit-members').textContent=old.members.map(c=>c.name+' · หนี้ '+fmt(c.debt||0)+' · วงเงินเดิม '+fmt(c.limit||0)+(c.archived?' (ปิดใช้งาน)':'')).join('\n')+'\nหนี้รวม '+fmt(old.totalDebt)+'\n'+old.issues.join(' · ');
+  const select=document.getElementById('legacy-limit-target');select.replaceChildren(new Option('สร้างกลุ่มกลางใหม่',''));for(const pool of state.creditLimitGroups)select.add(new Option(pool.name+' · '+fmt(pool.limit),String(pool.id)));
+  document.getElementById('legacy-limit-name').value=old.root?old.name:'';document.getElementById('legacy-limit-amount').value=old.suggestedLimit!==null?old.suggestedLimit:'';document.getElementById('legacy-limit-confirm').checked=false;document.getElementById('legacy-limit-preview').textContent='ตรวจสมาชิกและระบุวงเงินจริง แล้วกดดูผลก่อนย้าย';changeLegacyLimitTarget();closeModal('modal-limit-groups');openModal('modal-legacy-limits');
+}
+function changeLegacyLimitTarget() {const id=document.getElementById('legacy-limit-target').value,pool=id?limitGroupById(id):null;document.getElementById('legacy-limit-name').disabled=!!pool;document.getElementById('legacy-limit-amount').disabled=!!pool;if(pool){document.getElementById('legacy-limit-name').value=pool.name;document.getElementById('legacy-limit-amount').value=pool.limit;}if(legacyLimitPreview)legacyLimitPreview.plan=null;document.getElementById('legacy-limit-confirm').checked=false;}
+function previewLegacyLimitMigration() {
+  try{if(!legacyLimitPreview)throw Error('กรุณาเปิดกลุ่มเดิมใหม่');if(!syncEqual(legacyLimitPreview.opened,captureBudget()))throw Error('ข้อมูลเปลี่ยนหลังเปิดหน้าตรวจ กรุณาปิดแล้วเปิดกลุ่มใหม่');const plan=buildLegacyLimitPlan(legacyLimitPreview.key,document.getElementById('legacy-limit-target').value,document.getElementById('legacy-limit-name').value,document.getElementById('legacy-limit-amount').value);legacyLimitPreview.plan=plan;document.getElementById('legacy-limit-preview').textContent='กลุ่ม '+plan.name+'\nวงเงินกลาง '+fmt(plan.limit)+'\nย้ายสมาชิก '+plan.memberIds.length+' ใบ (รวมบัตรปิดใช้งาน)\nหนี้เดิมรวม '+fmt(plan.totalDebt)+' — ไม่เปลี่ยนยอดหนี้หรือประวัติ\n'+(plan.poolId?'ใช้กลุ่มกลางที่มีอยู่':'สร้างกลุ่มกลางใหม่')+'\nจะสำรองก่อนย้าย และตัดการเชื่อมบัตรต่อบัตรเดิม';}catch(err){if(legacyLimitPreview)legacyLimitPreview.plan=null;document.getElementById('legacy-limit-preview').textContent=err.message;}
+}
+function saveLimitMigrationBackup(id) {
+  const payload=budgetBackupPayload('before-limit-migration',{id}),key='budget-limit-backup-'+id,text=JSON.stringify(payload);
+  try{localStorage.setItem(key,text);if(localStorage.getItem(key)!==text)throw Error('อ่านสำรองกลับไม่ได้');localStorage.setItem('budget-limit-last-backup',key);}catch(err){throw Error('สำรองข้อมูลก่อนย้ายกลุ่มไม่ได้ จึงยังไม่เปลี่ยนข้อมูล');}return {key,payload};
+}
+function downloadLimitBackup() {const key=localStorage.getItem('budget-limit-last-backup'),text=key&&localStorage.getItem(key);if(!text){alert('ยังไม่มีสำรองก่อนย้ายกลุ่มบนอุปกรณ์นี้');return;}downloadBudgetJson(JSON.parse(text),key+'.json');}
+async function commitLegacyLimitMigration() {
+  const plan=legacyLimitPreview&&legacyLimitPreview.plan;if(!plan)throw Error('กรุณาดูผลก่อนย้ายกลุ่ม');
+  if(!document.getElementById('legacy-limit-confirm').checked)throw Error('กรุณายืนยันว่าสมาชิกและวงเงินตรงกับหลักฐานจริง');
+  if(!syncEqual(captureBudget(),plan.snapshot))throw Error('ข้อมูลเปลี่ยนหลังดูตัวอย่าง กรุณาดูผลก่อนย้ายใหม่');
+  const current=buildLegacyLimitPlan(plan.key,document.getElementById('legacy-limit-target').value,document.getElementById('legacy-limit-name').value,document.getElementById('legacy-limit-amount').value);if(!syncEqual(current,plan))throw Error('ตัวเลือกเปลี่ยนไป กรุณาดูผลก่อนย้ายใหม่');
+  if(!confirm('ยืนยันย้าย '+plan.memberIds.length+' ใบเข้ากลุ่ม '+plan.name+' วงเงิน '+fmt(plan.limit)+' โดยไม่เปลี่ยนหนี้หรือประวัติ?'))return;
+  const backup=saveLimitMigrationBackup(newFinanceId());try{downloadBudgetJson(backup.payload,backup.key+'.json');}catch(err){console.warn('ดาวน์โหลดไม่ได้ ยังมีสำรองในเครื่อง',err);}
+  syncState.reconcileExpected=syncClone(plan.snapshot);let group=plan.poolId?limitGroupById(plan.poolId):null;if(!group){group={id:newFinanceId(),name:plan.name,limit:plan.limit};state.creditLimitGroups.push(group);}
+  for(const id of plan.memberIds){const card=state.creditCards.find(c=>c.id===id);card.creditLimitGroupId=group.id;card.limitGroup='';}
+  await saveData();legacyLimitPreview=null;closeModal('modal-legacy-limits');render();openLimitGroupManager();
 }
 
-function getGroupInfo(card) {
-  if (card.limitGroup) {
-    const anchor = state.creditCards.find(c => String(c.id) === String(card.limitGroup));
-    if (!anchor) return null;
-    const members = state.creditCards.filter(c => c.id === anchor.id || String(c.limitGroup) === String(anchor.id));
-    const totalDebt = members.reduce((s, c) => s + (c.debt || 0), 0);
-    const others = members.filter(c => c.id !== card.id).map(c => c.name).join(', ');
-    return { anchorName: anchor.name, sharedLimit: anchor.limit, totalDebt, others };
-  }
-  const members = state.creditCards.filter(c => String(c.limitGroup) === String(card.id));
-  if (!members.length) return null;
-  const allMembers = [card, ...members];
-  const totalDebt = allMembers.reduce((s, c) => s + (c.debt || 0), 0);
-  const others = members.map(c => c.name).join(', ');
-  return { anchorName: card.name, sharedLimit: card.limit, totalDebt, others };
-}
 
 /* ---- Firebase ---- */
 function setSyncStatus(msg, cls) {
@@ -972,7 +1079,7 @@ function initFirebase(config) {
   }
 }
 
-const BUDGET_KEYS = ['transactions','creditCards','ccTransactions','loans','loanTransactions','monthlyExpenses','monthlyStatus'];
+const BUDGET_KEYS = ['transactions','creditCards','ccTransactions','loans','loanTransactions','monthlyExpenses','monthlyStatus','creditLimitGroups'];
 const syncState = { mode:'connecting', loaded:false, connected:false, busy:false, writing:false, generation:0, baseline:null, pending:null, activeBase:null };
 function syncClone(value) { return JSON.parse(JSON.stringify(value)); }
 function syncEqual(a,b) {
@@ -1039,7 +1146,7 @@ function adoptBudget(raw,cache=true) {
 }
 function updateSyncControls() {
   const writable=syncState.loaded && (syncState.mode==='local'||(syncState.mode==='online'&&syncState.connected)) && !syncState.busy;
-  const actions=/\b(saveEditTx|saveEditCC|saveEditMo|addTransaction|deleteTransaction|addCreditCard|deleteCreditCard|saveCCTransaction|deleteCCTx|editCCTx|addLoan|deleteLoan|saveEditLoan|saveLoanPayment|deleteLoanTx|editLoanTx|addMonthlyExpense|deleteMonthlyExpense|toggleMonthlyPaid|importData|commitReconciliation|commitImport)\s*\(/;
+  const actions=/\b(saveEditTx|saveEditCC|saveEditMo|addTransaction|deleteTransaction|addCreditCard|deleteCreditCard|saveCCTransaction|deleteCCTx|editCCTx|addLoan|deleteLoan|saveEditLoan|saveLoanPayment|deleteLoanTx|editLoanTx|addMonthlyExpense|deleteMonthlyExpense|toggleMonthlyPaid|importData|commitReconciliation|commitImport|saveLimitGroup|commitLegacyLimitMigration)\s*\(/;
   document.querySelectorAll('button[onclick],.chk[onclick]').forEach(el=>{
     if(!actions.test(el.getAttribute('onclick')||''))return;
     if(el.tagName==='BUTTON')el.disabled=!writable;
@@ -1195,7 +1302,7 @@ function financeDate(value) {
   return value;
 }
 function newFinanceId() {
-  const ids=new Set([...state.transactions,...state.ccTransactions,...state.loanTransactions].map(x=>String(x.id)));
+  const ids=new Set([...state.transactions,...state.ccTransactions,...state.loanTransactions,...state.creditCards,...state.creditLimitGroups].map(x=>String(x.id)));
   let id=Math.max(Date.now()*1000+Math.floor(Math.random()*1000),financeLastId+2);
   while(ids.has(String(id))||ids.has(String(id+1)))id+=2;
   financeLastId=id;return id;
@@ -1325,19 +1432,10 @@ async function deleteTransaction(id) {
 }
 
 async function addCreditCard() {
-  const name = document.getElementById('cc-name').value.trim();
-  const limit = financeMoney(document.getElementById('cc-limit').value,true);
-  const debt = financeMoney(document.getElementById('cc-debt-input').value,true);
-  const dueday = financeDay(document.getElementById('cc-dueday').value);
-  const cutday = financeDay(document.getElementById('cc-cutday').value);
-  const limitGroup = document.getElementById('cc-group-select').value || '';
-  if (!name) { alert('กรุณากรอกชื่อบัตร'); return; }
-  state.creditCards.push({ id: Date.now(), name, limit, debt, cutday, dueday, limitGroup });
-  await saveData();
-  ['cc-name','cc-limit','cc-debt-input','cc-cutday','cc-dueday'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('cc-group-select').value = '';
-  document.getElementById('cc-add-form').style.display = 'none';
-  render();
+  const name=document.getElementById('cc-name').value.trim();if(!name)throw Error('กรุณากรอกชื่อบัตร');
+  const debt=financeMoney(document.getElementById('cc-debt-input').value,true),dueday=financeDay(document.getElementById('cc-dueday').value),cutday=financeDay(document.getElementById('cc-cutday').value),choice=readCardLimitChoice('cc');
+  const card={id:newFinanceId(),name,limit:choice.limit,debt,cutday,dueday,limitGroup:''};syncState.reconcileExpected=captureBudget();applyCardLimitChoice(card,choice);state.creditCards.push(card);await saveData();
+  for(const id of ['cc-name','cc-limit','cc-debt-input','cc-cutday','cc-dueday','cc-group-name'])document.getElementById(id).value='';document.getElementById('cc-group-select').value='';document.getElementById('cc-add-form').style.display='none';render();
 }
 
 async function deleteCreditCard(id) {
@@ -1563,7 +1661,7 @@ function exportData() {
 }
 
 /* ---- Validated backup import ---- */
-const BUDGET_FILE_VERSION=1;
+const BUDGET_FILE_VERSION=2;
 let importPreview=null;
 let importReadGeneration=0;
 function budgetBackupPayload(type='export',extra={}) {
@@ -1581,7 +1679,7 @@ function validateBudgetImport(raw) {
   }
   inspect(raw,'ไฟล์');
   for(const key of Object.keys(raw))if(!BUDGET_KEYS.includes(key)&&key!=='_format'&&key!=='_backupInfo')throw Error('ไฟล์มีหัวข้อที่ไม่รองรับ: '+key+' กรุณาใช้ไฟล์ Export ของแอป');
-  if(raw._format!==undefined){object(raw._format,'_format');if(raw._format.app!=='InOutCome'||raw._format.schemaVersion!==BUDGET_FILE_VERSION)throw Error('ไฟล์นี้เป็นของแอปอื่นหรือเวอร์ชันที่ยังไม่รองรับ');}
+  if(raw._format!==undefined){object(raw._format,'_format');if(raw._format.app!=='InOutCome'||![1,BUDGET_FILE_VERSION].includes(raw._format.schemaVersion))throw Error('ไฟล์นี้เป็นของแอปอื่นหรือเวอร์ชันที่ยังไม่รองรับ');}
   if(raw._backupInfo!==undefined){object(raw._backupInfo,'_backupInfo');if(raw._backupInfo.version!==undefined&&raw._backupInfo.version!==1)throw Error('เวอร์ชันไฟล์สำรองยังไม่รองรับ');}
   const data={},warnings=[];
   const fail=(path,msg)=>{throw Error(path+': '+msg);};
@@ -1594,6 +1692,7 @@ function validateBudgetImport(raw) {
   const statusKey=(v,path)=>{const match=/^(\d{4}-(?:0[1-9]|1[0-2]))-([1-9]\d*)$/.exec(v||'');if(!match)fail(path,'รหัสสถานะรายเดือนไม่ถูกต้อง');id(Number(match[2]),path);if(String(Number(match[2]))!==match[2])fail(path,'รูปแบบรหัสรายการไม่ถูกต้อง');return match;};
   const optionalBoolean=(v,path)=>{if(v!==undefined&&typeof v!=='boolean')fail(path,'ต้องเป็น true หรือ false');};
   const target=(v,path)=>{if(v.targetType!==undefined&&!['','cc','ln'].includes(v.targetType))fail(path+'.targetType','ประเภทบัญชีไม่ถูกต้อง');if(v.targetType){id(v.targetId,path+'.targetId');}else if(v.targetId!==undefined&&v.targetId!=='')fail(path+'.targetId','รหัสบัญชีไม่ตรงกับประเภทบัญชี');};
+  if(raw.creditLimitGroups===undefined){if(raw._format&&raw._format.schemaVersion>=2||Array.isArray(raw.creditCards)&&raw.creditCards.some(c=>c&&c.creditLimitGroupId))throw Error('ไฟล์มีโครงสร้างกลุ่มใหม่ แต่ขาด creditLimitGroups');raw={...raw,creditLimitGroups:[]};}
   const maps={};
   for(const key of BUDGET_KEYS){
     if(!Object.prototype.hasOwnProperty.call(raw,key))fail(key,'ไฟล์ขาดหัวข้อนี้ จึงไม่แทนที่ด้วยข้อมูลว่างโดยเดา');
@@ -1602,7 +1701,8 @@ function validateBudgetImport(raw) {
     maps[key]=new Map();
     for(const [i,item] of raw[key].entries()){
       const path=key+'['+i+']';object(item,path);id(item.id,path+'.id');if(maps[key].has(item.id))fail(path+'.id','รหัสซ้ำในหัวข้อนี้');maps[key].set(item.id,item);
-      if(key==='transactions'){
+      if(key==='creditLimitGroups'){text(item.name,path+'.name',true);money(item.limit,path+'.limit',true);if(item.limitGroup||item.parentId||item.creditLimitGroupId)fail(path,'กลุ่มวงเงินห้ามเชื่อมต่อกลุ่มอื่น');}
+      else if(key==='transactions'){
         if(!['income','expense'].includes(item.type))fail(path+'.type','ต้องเป็น income หรือ expense');
         money(item.amount,path+'.amount');text(item.name,path+'.name',true);date(item.date,path+'.date');month(item.monthKey,path+'.monthKey');
         if(item.monthKey!==item.date.slice(0,7))warnings.push(path+': วันที่กับเดือนรายการไม่ตรงกัน ต้องตรวจหลังนำเข้า');
@@ -1615,6 +1715,7 @@ function validateBudgetImport(raw) {
         for(const field of key==='creditCards'?['dueday','cutday']:['dueday'])if(item[field]!==undefined&&(!Number.isInteger(item[field])||item[field]<0||item[field]>31))fail(path+'.'+field,'วันต้องเป็น 0–31');
         if(key==='creditCards'){
           money(item.limit,path+'.limit',true);
+          if(item.creditLimitGroupId!==undefined&&item.creditLimitGroupId!=='')id(item.creditLimitGroupId,path+'.creditLimitGroupId');
           if(item.limitGroup!==undefined&&item.limitGroup!==''){const group=typeof item.limitGroup==='string'?Number(item.limitGroup):item.limitGroup;id(group,path+'.limitGroup');if(String(group)!==String(item.limitGroup))fail(path+'.limitGroup','รหัสกลุ่มไม่ถูกต้อง');if(group===item.id)fail(path+'.limitGroup','บัตรผูกวงเงินกับตัวเองไม่ได้');}
         }else {
           optionalMoney(item.monthly,path+'.monthly');text(item.note,path+'.note');if(item.type!==undefined&&!['bnpl','cash','installment','other'].includes(item.type))fail(path+'.type','ประเภทสินเชื่อไม่ถูกต้อง');
@@ -1648,6 +1749,7 @@ function validateBudgetImport(raw) {
     else if(!isLink&&value===true){const e=maps.monthlyExpenses.get(Number(match[2]));if(!e.payments||!e.payments[base])warnings.push('monthlyStatus.'+key+': รายการเก่าจ่ายแล้วแต่ยังไม่มีหลักฐานลดหนี้/รายจ่าย ให้ตรวจในหน้ารายการเก่า');}
     if(isLink&&!maps.transactions.has(value))warnings.push('monthlyStatus.'+key+': ไม่พบรายจ่ายที่เชื่อม');
   }
+  for(const c of data.creditCards){if(c.creditLimitGroupId&&!maps.creditLimitGroups.has(c.creditLimitGroupId))warnings.push('บัตร #'+c.id+': ไม่พบกลุ่มวงเงินกลาง');if(c.creditLimitGroupId&&c.limitGroup)warnings.push('บัตร #'+c.id+': มีการเชื่อมเก่าและใหม่ปนกัน ต้องตรวจ');}
   for(const c of data.creditCards)if(c.limitGroup){const seen=new Set([c.id]);let next=Number(c.limitGroup),depth=0;while(next){if(seen.has(next)){warnings.push('บัตร #'+c.id+': วงเงินร่วมเชื่อมเป็นวงจร ต้องตรวจ');break;}seen.add(next);const anchor=maps.creditCards.get(next);if(!anchor){warnings.push('บัตร #'+c.id+': ไม่พบบัตรวงเงินร่วม');break;}if(++depth>1){warnings.push('บัตร #'+c.id+': วงเงินร่วมเชื่อมหลายชั้น ต้องตรวจ');break;}next=Number(anchor.limitGroup)||0;}}
   for(const [key,kind] of [['ccTransactions','cc'],['loanTransactions','ln']])for(const r of data[key]){
     if(!(kind==='cc'?maps.creditCards:maps.loans).has(kind==='cc'?r.cardId:r.loanId))warnings.push(key+' #'+r.id+': ไม่พบบัญชีต้นทาง');
@@ -1666,7 +1768,7 @@ function validateBudgetImport(raw) {
     if(e.targetType&&!(e.targetType==='cc'?maps.creditCards:maps.loans).has(e.targetId))warnings.push('รายเดือน #'+e.id+': ไม่พบบัญชีที่ผูก');
     for(const [key,r] of Object.entries(e.payments||{})){if(data.monthlyStatus[key]!==true)warnings.push('หลักฐาน '+key+': สถานะรายเดือนยังไม่เป็นจ่ายแล้ว');if(r.targetType&&(monthlyHistory.get(key)||[]).length!==1)warnings.push('หลักฐาน '+key+': ประวัติชำระที่เชื่อมไม่ครบหรือมีซ้ำ');const tx=maps.transactions.get(r.txId);if(!tx)warnings.push('หลักฐาน '+key+': รายจ่ายหาย');else if(Number(tx.amount)!==Number(r.amount))warnings.push('หลักฐาน '+key+': ยอดไม่ตรงกับรายจ่าย');if(r.targetType&&!(r.targetType==='cc'?maps.creditCards:maps.loans).has(r.targetId))warnings.push('หลักฐาน '+key+': บัญชีต้นทางหาย');}
   }
-  return {data,warnings:[...new Set(warnings)],legacy:raw._format===undefined,format:raw._format?syncClone(raw._format):null};
+  return {data,warnings:[...new Set(warnings)],legacy:raw._format===undefined||raw._format.schemaVersion<BUDGET_FILE_VERSION,format:raw._format?syncClone(raw._format):null};
 }
 function importMap(data,key) {return key==='monthlyStatus'?data[key]:Object.fromEntries(data[key].map(item=>[item.id,item]));}
 function importTotals(data) {
@@ -1685,13 +1787,14 @@ function buildImportPreview(raw,fileName='backup.json') {
     summary.push(row);
   }
   const current=Object.fromEntries(BUDGET_KEYS.map(k=>[k,syncClone(state[k])]));
+  if(validated.legacy&&current.creditLimitGroups.length&&!validated.data.creditLimitGroups.length)validated.warnings.push('สำรองรุ่นก่อนระบบวงเงินกลาง จะคืนโครงสร้างวงเงินตามไฟล์เดิม กรุณาตรวจจำนวนกลุ่มที่ถูกลบก่อนยืนยัน');
   const beforeTotals=importTotals(current),afterTotals=importTotals(validated.data);if(afterTotals.balance===null||afterTotals.debt===null)throw Error('ยอดรวมในไฟล์สูงเกินขอบเขตคำนวณของแอป จึงไม่นำเข้า');
   return {...validated,snapshot,fileName,dataSignature:JSON.stringify(validated.data),summary,details,changed,totalDeleted:summary.reduce((n,r)=>n+r.deleted,0),empty:BUDGET_KEYS.every(k=>k==='monthlyStatus'?Object.keys(validated.data[k]).length===0:validated.data[k].length===0),before:beforeTotals,after:afterTotals};
 }
 function showImportPreview(plan) {
   importPreview=plan;
   document.getElementById('import-file-name').textContent=plan.fileName+(plan.legacy?' • สำรองรูปแบบเดิม':' • InOutCome เวอร์ชัน '+BUDGET_FILE_VERSION);
-  const labels={transactions:'รายรับ–รายจ่าย',creditCards:'บัตร',ccTransactions:'ประวัติบัตร',loans:'สินเชื่อ',loanTransactions:'ประวัติสินเชื่อ',monthlyExpenses:'รายเดือน',monthlyStatus:'สถานะ/ตัวเชื่อมรายเดือน'};
+  const labels={transactions:'รายรับ–รายจ่าย',creditCards:'บัตร',ccTransactions:'ประวัติบัตร',loans:'สินเชื่อ',loanTransactions:'ประวัติสินเชื่อ',monthlyExpenses:'รายเดือน',monthlyStatus:'สถานะ/ตัวเชื่อมรายเดือน',creditLimitGroups:'กลุ่มวงเงินกลาง'};
   const counts=document.getElementById('import-counts');counts.replaceChildren();
   for(const row of plan.summary){const line=document.createElement('div');line.className='import-count-row';line.textContent=labels[row.key]+': เพิ่ม '+row.added+' / เปลี่ยน '+row.modified+' / ลบ '+row.deleted+' / เหมือนเดิม '+row.unchanged;counts.appendChild(line);}
   const format=n=>n===null?'คำนวณไม่ได้':signedReconciliationMoney(n);
@@ -2057,15 +2160,16 @@ function render() {
       const grp = getGroupInfo(c);
       let pct, limitLabel, debtLabel, sharedNote = '';
       if (grp) {
-        pct = grp.sharedLimit > 0 ? Math.min(100,(grp.totalDebt/grp.sharedLimit)*100) : 0;
-        limitLabel = fmt(grp.sharedLimit);
+        pct = !grp.unresolved&&grp.sharedLimit > 0 ? (grp.totalDebt/grp.sharedLimit)*100 : 0;
+        limitLabel = grp.unresolved?'รอตรวจ':fmt(grp.sharedLimit);
         debtLabel = fmt(c.debt||0);
-        sharedNote = `<div class="cc-group-note">วงเงินร่วมกับ ${grp.anchorName} · รวม ${fmt(grp.totalDebt)} / ${fmt(grp.sharedLimit)}</div>`;
+        sharedNote = `<div class="cc-group-note">${grp.legacy?'กลุ่มเดิม รอยืนยัน':'กลุ่ม'} ${limitText(grp.anchorName)} · หนี้รวม ${fmt(grp.totalDebt)}${grp.unresolved?' · ต้องตรวจวงเงิน':' / '+fmt(grp.sharedLimit)}</div>`;
       } else {
-        pct = c.limit > 0 ? Math.min(100,((c.debt||0)/c.limit)*100) : 0;
+        pct = c.limit > 0 ? ((c.debt||0)/c.limit)*100 : 0;
         limitLabel = fmt(c.limit||0);
         debtLabel = fmt(c.debt||0);
       }
+      const available=grp&&grp.unresolved?null:((grp?grp.sharedLimit:c.limit||0)-(grp?grp.totalDebt:c.debt||0));
       const barColor = pct > 80 ? 'var(--neg)' : pct > 50 ? 'var(--warn)' : 'var(--pos)';
       const grad = CC_GRADIENTS[i % CC_GRADIENTS.length];
       return `<div class="card-wrap">
@@ -2084,10 +2188,10 @@ function render() {
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
             <span class="tx-sub">ยอดใช้ไป</span><span class="tx-name">${debtLabel}</span>
           </div>
-          <div class="bar-t"><div class="bar-f" style="width:${pct.toFixed(0)}%;background:${barColor}"></div></div>
+          <div class="bar-t"><div class="bar-f" style="width:${Math.min(100,Math.max(0,pct)).toFixed(0)}%;background:${barColor}"></div></div>
           <div style="display:flex;justify-content:space-between;margin-bottom:12px">
-            <span class="tx-sub">${pct.toFixed(0)}% ของวงเงิน</span>
-            <span class="acc-t">คงเหลือ ${fmt((grp?grp.sharedLimit:c.limit||0)-(grp?grp.totalDebt:c.debt||0))}</span>
+            <span class="tx-sub">${grp&&grp.unresolved?'รอตรวจกลุ่ม':(grp?grp.sharedLimit:c.limit)>0?pct.toFixed(0)+'% ของวงเงิน':'วงเงิน 0'}</span>
+            <span class="acc-t" style="color:${available!==null&&available<0?'var(--neg)':'var(--accent-t)'}">${available===null?'รอยืนยันวงเงิน':available<0?'เกินวงเงิน '+fmt(-available):'คงเหลือ '+fmt(available)}</span>
           </div>
           ${sharedNote}
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:${sharedNote?'8px':'0'}">
@@ -2192,8 +2296,9 @@ function render() {
     document.getElementById('monthly-list').innerHTML = '<div class="empty">ยังไม่มีรายการเดือนนี้<br><span style="font-size:11px">กด + ด้านบนเพื่อเพิ่ม</span></div>';
   }
 
-  populateCCGroupSelect('cc-group-select', -1, '');
+  populateCCGroupSelect('cc-group-select', -1, document.getElementById('cc-group-select').value||'');
   renderReconciliationList();
+  if(!document.getElementById('modal-limit-groups').classList.contains('hidden'))renderLimitGroupManager();
   updateSyncControls();
 }
 
@@ -2204,7 +2309,7 @@ for(const [opener,collection] of [['editTransaction','transactions'],['editCredi
   const original=globalThis[opener];
   globalThis[opener]=function(id){const item=state[collection].find(x=>x.id===id);if(item)editSnapshots[collection]={id,record:syncClone(item)};return original(id);};
 }
-for(const name of ["saveEditTx","saveEditCC","saveEditMo","addTransaction","deleteTransaction","addCreditCard","deleteCreditCard","saveCCTransaction","deleteCCTx","editCCTx","addLoan","deleteLoan","saveEditLoan","saveLoanPayment","deleteLoanTx","editLoanTx","addMonthlyExpense","deleteMonthlyExpense","toggleMonthlyPaid","commitReconciliation","commitImport"]){
+for(const name of ["saveEditTx","saveEditCC","saveEditMo","addTransaction","deleteTransaction","addCreditCard","deleteCreditCard","saveCCTransaction","deleteCCTx","editCCTx","addLoan","deleteLoan","saveEditLoan","saveLoanPayment","deleteLoanTx","editLoanTx","addMonthlyExpense","deleteMonthlyExpense","toggleMonthlyPaid","commitReconciliation","commitImport","saveLimitGroup","commitLegacyLimitMigration"]){
   const original=globalThis[name];
   globalThis[name]=function(...args){return performBudgetMutation(async()=>{
     const edit={saveEditTx:['transactions',editingTxId],saveEditCC:['creditCards',editingCCId],saveEditMo:['monthlyExpenses',editingMoId],saveEditLoan:['loans',editingLnId]}[name];
