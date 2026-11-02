@@ -2155,17 +2155,29 @@ function populateMoCategory() {
   }
 }
 
+function monthActivity() {
+  const month=monthKey(state.currentYear,state.currentMonth);
+  const charges=state.ccTransactions.filter(t=>t.type==='charge'&&typeof t.date==='string'&&t.date.slice(0,7)===month).map(t=>{
+    const card=state.creditCards.find(c=>String(c.id)===String(t.cardId));
+    return {id:t.id,cardCharge:true,type:'charge',date:t.date,amount:t.amount,name:'ใช้บัตร: '+(card?card.name:t.cardName||'บัตรเดิม')+(t.note?' · '+t.note:''),category:'บัตรเครดิต'};
+  });
+  return [...currentMonthTx(),...charges].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||Number(b.id)-Number(a.id));
+}
+function activityText(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
 function txItemHtml(t, editable) {
   const ci = getCatInfo(t.category);
+  const charge=t.cardCharge===true;
   return `<div class="tx-row">
     <div class="tx-ico" style="background:${ci.bg}"><span class="ms" style="color:${ci.color};font-variation-settings:'FILL' 1">${ci.icon}</span></div>
     <div class="tx-info">
-      <div class="tx-name">${t.name}</div>
-      <div class="tx-sub">${t.date}${t.category?' · '+t.category:''}</div>
+      <div class="tx-name">${activityText(t.name)}</div>
+      <div class="tx-sub">${activityText(t.date)}${t.category?' · '+activityText(t.category):''}</div>
+      ${charge?'<div class="tx-sub" style="color:var(--accent-t)">ใช้บัตร — เพิ่มหนี้ ยังไม่หักเงินสด</div>':''}
     </div>
     <div style="text-align:right;flex-shrink:0">
-      <div class="tx-amt ${t.type}">${t.type==='income'?'+':'−'}${fmt(t.amount)}</div>
-      ${editable ? `<div class="tx-actions"><button class="btn-edit" onclick="editTransaction(${t.id})">แก้ไข</button><button class="btn-danger-sm" onclick="deleteTransaction(${t.id})">ลบ</button></div>` : ''}
+      <div class="tx-amt ${t.type}">${charge?'ยอดรูด ':t.type==='income'?'+':'−'}${fmt(t.amount)}</div>
+      ${editable ? `<div class="tx-actions"><button class="btn-edit" onclick="${charge?'editCCTx':'editTransaction'}(${t.id})">แก้ไข</button><button class="btn-danger-sm" onclick="${charge?'deleteCCTx':'deleteTransaction'}(${t.id})">ลบ</button></div>` : ''}
     </div>
   </div>`;
 }
@@ -2174,7 +2186,7 @@ function render() {
   const mk = monthKey(state.currentYear, state.currentMonth);
   document.getElementById('currentMonthLabel').textContent = MONTHS_TH[state.currentMonth] + ' ' + (state.currentYear + 543);
 
-  const txs = currentMonthTx();
+  const txs = monthActivity();
   const totals=overviewTotals();
   const {income,expense}=totals;
   const totalDebt = state.creditCards.reduce((s,c)=>s+(c.debt||0),0) + state.loans.reduce((s,l)=>s+(l.debt||0),0);
